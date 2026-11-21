@@ -1,0 +1,49 @@
+<!--
+================================================================================
+FILE: RaggieSoft.Core.csproj
+PROJECT: RaggieSoft.Core (Shared Architecture Library for Windows Desktop Apps)
+LICENSE: MIT License
+DESCRIPTION:
+  Shared .NET 10 class library consumed by both RaggieSoft Book Reader
+  (BookReader.csproj) and The Listening Room (ListeningRoom.csproj).
+  Provides:
+    1. Zero-Database Flat-File Models for Ocean View Archives (catalog.json,
+       toc.json, pXXX.md, <slug>-package.7z) and Engine Room Records
+       (master-catalog.json, tracks.json, .vtt timed lyrics, suno-prompts/*.md,
+       and *-free-archive.zip).
+    2. End-User Cloud CDN & Offline 7-Zip / ZIP Package Storage Manager
+       (downloads and extracts .7z book packages and .zip/.7z album archives
+       into %LOCALAPPDATA%\RaggieSoft\Cache using the bundled 7za.exe binary,
+       with zero dependency on any developer workspace directory).
+    3. Bidirectional Named Pipe Inter-Process Communication (IPC) Bridge
+       allowing BookReader and ListeningRoom to control and synchronize with
+       each other in real time.
+================================================================================
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>RaggieSoft.Core</RootNamespace>
+    <AssemblyName>RaggieSoft.Core</AssemblyName>
+    <Company>RaggieSoft</Company>
+    <Authors>Michael P. Ragsdale</Authors>
+    <Copyright>Copyright © Michael P. Ragsdale (Code: MIT / Content: CC BY-SA 4.0)</Copyright>
+  </PropertyGroup>
+
+  <!--
+    Optional 7-Zip standalone CLI bundle (present in the full RaggieSoftApps monorepo
+    for BookReader and ListeningRoom; omitted cleanly in standalone StoreTrainer builds).
+  -->
+  <ItemGroup Condition="Exists('Tools\7zip\7za.exe')">
+    <None Include="Tools\7zip\7za.exe" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Tools\7zip\7za.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Tools\7zip\7zxa.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,14 @@
+# Preserve Windows CRLF line endings on Visual Basic 6.0, NSIS, and Inno Setup scripts
+# so Visual Basic 6.0 inside Windows 2000 SP4 and ISCC.exe on Windows 11 open them cleanly.
+*.vbp text eol=crlf
+*.vbw text eol=crlf
+*.frm text eol=crlf
+*.bas text eol=crlf
+*.nsi text eol=crlf
+*.iss text eol=crlf
+*.frx binary
+*.ico binary
+*.png binary
+*.bmp binary
+*.exe binary
+*.dll binary

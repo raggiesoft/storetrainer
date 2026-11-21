@@ -1,0 +1,44 @@
+<!--
+================================================================================
+FILE: App.xaml
+PROJECT: RaggieSoft StoreTrainer 2.0 (StoreTrainer.csproj)
+LICENSE: MIT License (Code) / CC BY-SA 4.0 (Documentation & Creative Content)
+
+PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
+  What is this file?
+    Think of App.xaml as the global startup wrapper for the StoreTrainer 2.0
+    desktop application — similar to the root '<html>' tag and global CSS reset
+    in a web app.
+
+  Why is there NO 'StartupUri="MainWindow.xaml"' attribute on <Application> here?
+    In StoreTrainer, a user can either:
+      1. Open the full StoreTrainer library & editor window normally, OR
+      2. Double-click a saved '.stf' game profile in Windows File Explorer (which
+         runs 'StoreTrainer.exe /l "MyGame.stf"') to launch their game and trainer
+         immediately and exit cleanly *without* opening the editor window!
+    By omitting 'StartupUri' here and managing startup inside 'App.xaml.cs'
+    ('OnStartup'), fast-launch '/l' commands execute silently in milliseconds and
+    only open 'MainWindow' when the user actually wants the interactive window.
+================================================================================
+-->
+
+<!--
+  ROOT <Application> ELEMENT:
+  - x:Class="StoreTrainer.App": Connects this XAML file to 'public partial class App'
+    in App.xaml.cs.
+  - ThemeMode="System": Activates .NET 10's built-in Windows 11 Fluent visual style
+    (crisp rounded controls, accessible keyboard focus outlines, and automatic OS
+    Light/Dark/High-Contrast adaptation).
+-->
+<Application x:Class="StoreTrainer.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ThemeMode="System">
+
+    <!--
+      Global application resource dictionary (kept clean because Fluent ThemeMode
+      supplies live {DynamicResource ...} brushes across Light, Dark, and High-Contrast).
+    -->
+    <Application.Resources>
+    </Application.Resources>
+</Application>

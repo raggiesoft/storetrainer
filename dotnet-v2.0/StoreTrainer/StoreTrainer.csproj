@@ -1,0 +1,113 @@
+<!--
+================================================================================
+FILE: StoreTrainer.csproj
+PROJECT: RaggieSoft StoreTrainer 2.0 (PC Game & Trainer Organizer — Windows Desktop App)
+LICENSE: MIT License (Code) / CC BY-SA 4.0 (Documentation & Creative Content)
+
+PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
+  What is this file?
+    Think of StoreTrainer.csproj like 'package.json' in a Node.js project: it tells
+    the .NET 10 compiler ('dotnet build' / Visual Studio 2026) what kind of program
+    to compile ('WinExe' = a Windows GUI desktop application with no black console
+    window behind it), which version number to stamp into 'StoreTrainer.exe' ('2.0.0'),
+    which icons to embed, and which shared RaggieSoft libraries to link in.
+
+  How does StoreTrainer 2.0 relate to classic VB6 StoreTrainer 1.0 & 1.1?
+    - StoreTrainer 1.0 (2018–2020, pre-AI) and StoreTrainer 1.1 were built in
+      classic 32-bit Visual Basic 6.0 ('TStore.exe') for vintage Windows 95–2000 PCs.
+    - StoreTrainer 2.0 brings that exact same lightweight '.stf' StoreFile format
+      forward into modern C# and .NET 10 WPF (native 64-bit x64 and ARM64) with a
+      searchable sidebar library, drag-and-drop, process-ready launch sequencing,
+      trainer file verification, Light/Dark themes, and RaggieSoft Launcher integration.
+    - When built in 'Release' configuration on Windows, the MSBuild target at the
+      bottom automatically publishes both x64 and ARM64 binaries and runs Inno Setup 7
+      ('ISCC.exe') on 'StoreTrainer.iss' to produce '..\Installers\RaggieSoft-StoreTrainer-Setup.exe'!
+================================================================================
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    <PropertyGroup>: Core compiler, runtime, and executable metadata settings.
+    - OutputType="WinExe": Produces a graphical Windows desktop executable.
+    - TargetFramework="net10.0-windows": Targets .NET 10 with Windows WPF APIs enabled.
+    - Platforms="x64;ARM64" + RuntimeIdentifiers="win-x64;win-arm64": Supports both
+      Intel/AMD 64-bit PCs and Snapdragon/Apple-Silicon-VM ARM64 Windows PCs natively.
+    - EnableWindowsTargeting="true": Allows 'dotnet build' to cross-compile and
+      type-check this Windows WPF project cleanly on macOS and Linux workstations too!
+    - NoWarn="$(NoWarn);WPF0001": Suppresses the preview warning on .NET 10's Fluent
+      'ThemeMode' property (Dark / Light / System).
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+    <AssemblyName>StoreTrainer</AssemblyName>
+    <RootNamespace>StoreTrainer</RootNamespace>
+    <Version>2.0.0</Version>
+    <FileVersion>2.0.0.0</FileVersion>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <Company>RaggieSoft</Company>
+    <Product>RaggieSoft StoreTrainer</Product>
+    <Authors>Michael P. Ragsdale</Authors>
+    <Copyright>Copyright © Michael P. Ragsdale (Code: MIT / Content: CC BY-SA 4.0)</Copyright>
+    <ApplicationIcon>Assets\StoreTrainer.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!--
+    Embedded WPF binary resources ('pack://application:,,,/Assets/StoreTrainer.png')
+    compiled directly inside StoreTrainer.exe so icons never go missing on disk.
+  -->
+  <ItemGroup>
+    <Resource Include="Assets\StoreTrainer.ico" />
+    <Resource Include="Assets\StoreTrainer.png" />
+  </ItemGroup>
+
+  <!--
+    Include shared RaggieSoft modal dialogs (First-Run Work of Fiction Notice and
+    About & Legal Notice) from '..\SharedWpf\'.
+  -->
+  <ItemGroup>
+    <Compile Include="..\SharedWpf\*.cs" Link="SharedWpf\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!--
+    Reference 'RaggieSoft.Core' for shared workspace path helpers and legal copy.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\RaggieSoft.Core\RaggieSoft.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    Automatic Multi-Architecture (x64 + ARM64) & Inno Setup 7 (64-bit) Hook:
+    When built in 'Release' on Windows ('$(OS)' == 'Windows_NT'), MSBuild publishes
+    both CPU targets and compiles 'StoreTrainer.iss' into '..\Installers\RaggieSoft-StoreTrainer-Setup.exe'.
+    Notice '$(IsInnerPublishBuild)' != 'true' prevents infinite recursion when this
+    target calls 'dotnet publish' on itself!
+  -->
+  <Target Name="BuildInnoSetupInstaller" AfterTargets="Build;Publish" Condition="'$(Configuration)' == 'Release' and '$(OS)' == 'Windows_NT' and '$(IsInnerPublishBuild)' != 'true'">
+    <PropertyGroup>
+      <PublishDirX64>$(ProjectDir)bin\Release\net10.0-windows\win-x64\publish</PublishDirX64>
+      <PublishDirArm64>$(ProjectDir)bin\Release\net10.0-windows\win-arm64\publish</PublishDirArm64>
+      <InnoSetupRegistryDir>$([MSBuild]::GetRegistryValueFromView('HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 7_is1', 'InstallLocation', null, RegistryView.Registry64))</InnoSetupRegistryDir>
+      <InnoSetupRegistryDir Condition="'$(InnoSetupRegistryDir)' == ''">$([MSBuild]::GetRegistryValueFromView('HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 7_is1', 'InstallLocation', null, RegistryView.Registry64))</InnoSetupRegistryDir>
+      <InnoSetupCompiler Condition="'$(InnoSetupRegistryDir)' != '' and Exists('$([MSBuild]::EnsureTrailingSlash($(InnoSetupRegistryDir)))ISCC.exe')">$([MSBuild]::EnsureTrailingSlash($(InnoSetupRegistryDir)))ISCC.exe</InnoSetupCompiler>
+      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' and Exists('C:\Program Files\Inno Setup 7\ISCC.exe')">C:\Program Files\Inno Setup 7\ISCC.exe</InnoSetupCompiler>
+      <InnoSetupCompiler Condition="'$(InnoSetupCompiler)' == '' and Exists('$(LocalAppData)\Programs\Inno Setup 7\ISCC.exe')">$(LocalAppData)\Programs\Inno Setup 7\ISCC.exe</InnoSetupCompiler>
+    </PropertyGroup>
+
+    <Message Importance="High" Text="⚙️ [Release Multi-Arch] Publishing native x64 (win-x64) and ARM64 (win-arm64) binaries for StoreTrainer 2.0..." />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c Release -r win-x64 --no-self-contained -p:Platform=x64 -p:IsInnerPublishBuild=true -o &quot;$(PublishDirX64)&quot;" />
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; -c Release -r win-arm64 --no-self-contained -p:Platform=ARM64 -p:IsInnerPublishBuild=true -o &quot;$(PublishDirArm64)&quot;" />
+
+    <Message Importance="High" Text="📦 [Inno Setup 7 x64] Invoking $(InnoSetupCompiler) for StoreTrainer.iss (x64 + ARM64 + NSIS Upgrade)..." Condition="'$(InnoSetupCompiler)' != ''" />
+    <Exec Command="&quot;$(InnoSetupCompiler)&quot; /DBuildDirX64=&quot;$(PublishDirX64)&quot; /DBuildDirArm64=&quot;$(PublishDirArm64)&quot; &quot;$(ProjectDir)StoreTrainer.iss&quot;" Condition="'$(InnoSetupCompiler)' != ''" />
+    <Warning Text="Inno Setup 7 (ISCC.exe) was not found in HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 7_is1 or C:\Program Files\Inno Setup 7; skipping installer creation." Condition="'$(InnoSetupCompiler)' == ''" />
+  </Target>
+
+</Project>
