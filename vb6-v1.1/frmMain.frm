@@ -257,6 +257,12 @@ Begin VB.Form frmMain
    End
    Begin VB.Menu mnuHelp 
       Caption         =   "&Help"
+      Begin VB.Menu mnuHelpUpdate 
+         Caption         =   "Check for &Updates..."
+      End
+      Begin VB.Menu mnuHelpDash1 
+         Caption         =   "-"
+      End
       Begin VB.Menu mnuHelpAbout 
          Caption         =   "&About..."
       End
@@ -299,6 +305,9 @@ Private Sub Form_Load()
     SetFileName "untitled"
     SetFileFlag False, Me
     RefreshRecentFilesMenu
+    ' Disable Check for Updates automatically on vintage offline OSes (Win95–Win8.1)
+    ' or when the external modern updater binary is absent!
+    Me.mnuHelpUpdate.Enabled = (FindModernUpdaterPath() <> "")
 End Sub
 
 Private Sub Form_Unload(Cancel As Integer)
@@ -601,6 +610,10 @@ Private Sub mnuFileSaveAs_Click()
     SetFileName strFile
     SaveStoreFile Me, strFile
     RefreshRecentFilesMenu
+End Sub
+
+Private Sub mnuHelpUpdate_Click()
+    CheckForUpdatesViaExternalBinary
 End Sub
 
 Private Sub mnuHelpAbout_Click()

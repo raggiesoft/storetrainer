@@ -57,9 +57,15 @@ Public Sub isSilentDirtyReset()
     isFileDirty = False
 End Sub
 
-' Returns the current '.stf' schema version ('1.1' — 100% compatible with v1.0 & v2.0)
+' Returns the '.stf' schema version string.
+' WORD 97 <-> WORD 2000 FORWARD-COMPATIBILITY DESIGN:
+'   StoreTrainer v1.0 checks 'CheckVersion(fileVer, "1.0")' and refuses to open
+'   any '.stf' file if 'STF.Version' is higher than "1.0"! By keeping 'STF.Version=1.0'
+'   in StoreTrainer v1.1 while storing optional v1.1 fields like 'LaunchDelay',
+'   any '.stf' saved in v1.1 still opens 100% cleanly inside original StoreTrainer v1.0
+'   (just ignoring the extra v1.1 keys, exactly like opening a Word 2000 .doc in Word 97)!
 Public Function GetSTFVersionStr() As String
-    GetSTFVersionStr = "1.1"
+    GetSTFVersionStr = "1.0"
 End Function
 
 ' Resets memory state for File -> New

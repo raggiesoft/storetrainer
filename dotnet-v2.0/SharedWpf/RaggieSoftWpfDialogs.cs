@@ -233,7 +233,51 @@ public static class RaggieSoftWpfDialogs
         AddWebButton(webRow, "📖 Ocean View Archives", "https://books.raggiesoft.com");
         AddWebButton(webRow, "🎵 The Listening Room", "https://music.raggiesoft.com");
         AddWebButton(webRow, "🎬 RaggieSoft Backstage", "https://backstage.raggiesoft.com");
+        AddWebButton(webRow, "🕹 StoreTrainer", "https://storetrainer.raggiesoft.com");
         root.Children.Add(webRow);
+
+        // Bottom bar: 1-Click "Check for Updates..." button (left) + "Close" button (right)
+        var footer = new DockPanel { LastChildFill = false };
+
+        var updateBtn = new Button
+        {
+            Content = "🔄 Check for Updates...",
+            Padding = new Thickness(14, 7, 14, 7)
+        };
+        DockPanel.SetDock(updateBtn, Dock.Left);
+        updateBtn.Click += async (_, _) =>
+        {
+            var appId = InferAppIdFromTitle(appTitle);
+            if (RaggieSoftUpdaterLauncher.TryLaunchInteractiveWizard(appId))
+            {
+                dlg.Close();
+                return;
+            }
+
+            // Graceful fallback on developer builds if RaggieSoftUpdate.exe hasn't been compiled yet
+            updateBtn.IsEnabled = false;
+            updateBtn.Content = "⏳ Checking...";
+            try
+            {
+                var mgr = new RaggieSoftSuiteManager(new RaggieSoftWorkspaceLocator());
+                var apps = await mgr.LoadSuiteAppsAsync(checkRemoteManifest: true);
+                var updates = apps.Where(a => a.IsUpdateAvailable).ToList();
+                var summary = updates.Count == 0
+                    ? $"You are running the latest available version of {appTitle} (v{version})."
+                    : $"Updates are available for: {string.Join(", ", updates.Select(u => $"{u.Title} (v{u.LatestVersion})"))}!\n\nOpen RaggieSoft Launcher to install updates.";
+                MessageBox.Show(dlg, summary, "RaggieSoft Software Update", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch
+            {
+                OpenExternalWebUrl("https://raggiesoft.com");
+            }
+            finally
+            {
+                updateBtn.Content = "🔄 Check for Updates...";
+                updateBtn.IsEnabled = true;
+            }
+        };
+        footer.Children.Add(updateBtn);
 
         // Close button (`IsDefault = true` handles `Enter`; `IsCancel = true` handles `Esc` automatically!)
         var closeBtn = new Button
@@ -241,15 +285,26 @@ public static class RaggieSoftWpfDialogs
             Content = "Close",
             FontWeight = FontWeights.SemiBold,
             Padding = new Thickness(18, 7, 18, 7),
-            HorizontalAlignment = HorizontalAlignment.Right,
             IsDefault = true,
             IsCancel = true
         };
+        DockPanel.SetDock(closeBtn, Dock.Right);
         closeBtn.Click += (_, _) => dlg.Close();
-        root.Children.Add(closeBtn);
+        footer.Children.Add(closeBtn);
+        root.Children.Add(footer);
 
         dlg.Content = root;
         dlg.ShowDialog();
+    }
+
+    // Maps any RaggieSoft desktop app's display title to its manifest ID for RaggieSoftUpdate.exe.
+    private static string InferAppIdFromTitle(string appTitle)
+    {
+        if (appTitle.Contains("Book", StringComparison.OrdinalIgnoreCase)) return "bookreader";
+        if (appTitle.Contains("Listening", StringComparison.OrdinalIgnoreCase)) return "listeningroom";
+        if (appTitle.Contains("Backstage", StringComparison.OrdinalIgnoreCase)) return "backstage";
+        if (appTitle.Contains("StoreTrainer", StringComparison.OrdinalIgnoreCase)) return "storetrainer";
+        return "launcher";
     }
 
     /// <summary>

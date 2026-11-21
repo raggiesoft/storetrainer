@@ -4,10 +4,14 @@
 Thumbs.db
 desktop.ini
 
-# Ignore .NET build outputs & compiled setup binaries
-dotnet-v2.0/bin/
-dotnet-v2.0/obj/
+# Ignore .NET & C++ build outputs and compiled setup binaries
+dotnet-v2.0/**/bin/
+dotnet-v2.0/**/obj/
+dotnet-v2.0/**/x64/
+dotnet-v2.0/**/ARM64/
+dotnet-v2.0/Installers/
 *.user
+*.suo
 
 # Never redistribute copyrighted Microsoft VB6 / DCOM98 / WSH redistributable binaries in Git
 vb6-v1.1/Installer/Microsoft Redist/

@@ -204,6 +204,68 @@ Public Sub AboutStoreTrainer()
     MsgBox sMsg, vbInformation + vbOKOnly, "About " & App.ProductName
 End Sub
 
+' Returns True ONLY when running on modern Windows 10 / Windows 11 (dwVerMajor >= 10)
+' AND the standalone zero-runtime C++20 RaggieSoftUpdate.exe binary exists on disk!
+' On vintage machines (Windows 95, 98, ME, NT 4.0, 2000, XP, Vista, 7, 8.1) that should
+' never connect to the modern internet, this returns False so Help -> Check for Updates
+' stays safely disabled!
+Public Function FindModernUpdaterPath() As String
+    Dim info As osInfo
+    info = GetWinVer()
+    If info.osArchitecture <> VER_PLATFORM_WIN32_NT Or info.osVersionMajor < 10 Then
+        FindModernUpdaterPath = ""
+        Exit Function
+    End If
+
+    Dim sCandidate As String
+    ' 1. Check 64-bit Program Files (%ProgramW6432%\RaggieSoft\Update\RaggieSoftUpdate.exe)
+    If Environ$("ProgramW6432") <> "" Then
+        sCandidate = Environ$("ProgramW6432") & "\RaggieSoft\Update\RaggieSoftUpdate.exe"
+        If DoesFileExist(sCandidate) Then
+            FindModernUpdaterPath = sCandidate
+            Exit Function
+        End If
+    End If
+
+    ' 2. Check standard ProgramFiles or App.Path
+    If Environ$("ProgramFiles") <> "" Then
+        sCandidate = Environ$("ProgramFiles") & "\RaggieSoft\Update\RaggieSoftUpdate.exe"
+        If DoesFileExist(sCandidate) Then
+            FindModernUpdaterPath = sCandidate
+            Exit Function
+        End If
+    End If
+
+    sCandidate = App.Path & "\RaggieSoftUpdate.exe"
+    If DoesFileExist(sCandidate) Then
+        FindModernUpdaterPath = sCandidate
+        Exit Function
+    End If
+
+    ' 3. Check Per-User LocalAppData\Programs\RaggieSoft\Update\RaggieSoftUpdate.exe
+    If Environ$("LOCALAPPDATA") <> "" Then
+        sCandidate = Environ$("LOCALAPPDATA") & "\Programs\RaggieSoft\Update\RaggieSoftUpdate.exe"
+        If DoesFileExist(sCandidate) Then
+            FindModernUpdaterPath = sCandidate
+            Exit Function
+        End If
+    End If
+
+    FindModernUpdaterPath = ""
+End Function
+
+' Invokes the standalone C++20 RaggieSoftUpdate.exe wizard (modern Windows 10/11 only!)
+Public Sub CheckForUpdatesViaExternalBinary()
+    Dim sUpdater As String
+    sUpdater = FindModernUpdaterPath()
+    If sUpdater = "" Then
+        MsgBox "Online update checking is disabled on vintage Windows releases (or RaggieSoft Software Update is not installed on this computer).", vbInformation, App.ProductName
+        Exit Sub
+    End If
+
+    Shell Chr$(34) & sUpdater & Chr$(34) & " /WIZARD --app storetrainer", vbNormalFocus
+End Sub
+
 ' Creates %APPDATA%\RaggieSoft\StoreTrainer\TStore.ini on first launch
 Public Sub CreateStoreTrainerData()
     Dim FSO As FileSystemObject

@@ -7,29 +7,28 @@ LICENSE: MIT License (Code) / CC BY-SA 4.0 (Documentation & Creative Content)
 PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
   What is this file?
     MainWindow.xaml defines the visual desktop window for RaggieSoft StoreTrainer 2.0.
-    If you have built web interfaces in HTML + CSS, think of this XAML file as a
-    clean, responsive 3-row CSS Grid layout:
-      - Row 0 (Top App Header): StoreTrainer icon, title, live profile count,
-        My StoreFiles folder buttons, Theme switcher (System / Dark / Light),
-        and About & Legal Notice button.
-      - Row 1 (Main Two-Column Workspace):
-          * Left Sidebar: Instant search box, Category/Favorites dropdown filter,
-            New Profile & Open Existing File buttons, and a live clickable list
-            of every '.stf' game profile in your 'My StoreFiles' folder!
-          * Right Profile Editor & Launcher: One-click 'Launch Game & Trainer'
-            primary button, Save / Save As / Duplicate / Remove toolbar, Launch
-            Order & Timing options, Game Program card (supports drag-and-drop!),
-            Companion Trainer card with optional Trainer Safety Check, Hotkey
-            Notes box, and the scrollable RaggieSoft Work of Fiction & Licensing
-            notice.
-      - Row 2 (Bottom Status Bar): Friendly live status message and active library
-        folder readout.
-
-  Screen-Reader & Keyboard Accessibility:
-    Every interactive control carries a clear 'AutomationProperties.Name' label
-    (WPF's desktop equivalent of HTML 'aria-label') for Windows Narrator, JAWS,
-    and NVDA, and uses '{DynamicResource ...}' Fluent brushes so Light Mode,
-    Dark Mode, and Windows High-Contrast themes all maintain crisp readability.
+    Think of this XAML file like a responsive 4-row CSS Grid layout:
+      - Row 0 (Top Header): Branding, Library Folder controls, Check for Updates,
+        Theme switcher (System / Dark / Light), and About & Legal Notice.
+      - Row 1 (Optional Classic Import Banner): Appears automatically if classic
+        StoreTrainer 1.0/1.1 '.stf' profiles are detected in 'My StoreFiles',
+        offering 1-click access to the 3-step StoreFile Upgrade Wizard!
+      - Row 2 (Main Two-Column Workspace):
+          * Left Sidebar: New Profile, Open / Upgrade Classic .stf, instant search,
+            category filter, and a live list of '.stfx' profiles with real game icons!
+          * Right Profile Editor & Launcher:
+              - Dual Launch Bar: "▶ Launch with Trainer" AND "▶ Launch Clean (No Trainer)",
+                plus Floating Cheat Card, Desktop Shortcut, Save, Duplicate, and Delete.
+              - Card 1: Profile Name, Launch Order, Auto-Close Trainer on Game Exit,
+                and Classic Game CPU Core Limiter.
+              - Card 2: Game Program (drag-and-drop '.exe' support!).
+              - Card 3: Multiple Companion Trainers per Game + "📦 Extract Trainer ZIP..."
+                (with automatic Windows administrator prompt for Program Files!) +
+                "📄 View Trainer Info (.NFO)" + Trusted Trainer Snapshot check.
+              - Card 4: Pre-Launch Save-Game Backup & 1-Click Rollback ("Trainer Insurance").
+              - Card 5: Structured Shortcut Key Cheat Table + Personal Notes + Pop-Out Cheat Card.
+              - Mandatory RaggieSoft Work of Fiction & Creative Licensing notice.
+      - Row 3 (Bottom Status Bar): Live status readout and active StoreFiles path.
 ================================================================================
 -->
 <Window x:Class="StoreTrainer.MainWindow"
@@ -40,24 +39,19 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
         mc:Ignorable="d"
         Title="RaggieSoft StoreTrainer — PC Game &amp; Trainer Organizer"
         Icon="Assets/StoreTrainer.png"
-        Width="1240"
-        Height="840"
-        MinWidth="860"
-        MinHeight="600"
+        Width="1280"
+        Height="860"
+        MinWidth="900"
+        MinHeight="620"
         AllowDrop="True"
         Drop="Window_OnDrop"
         DragOver="Window_OnDragOver"
         WindowStartupLocation="CenterScreen"
         AutomationProperties.Name="RaggieSoft StoreTrainer Application">
 
-    <!--
-      OUTER 3-ROW GRID:
-      - Row 0 (Auto): Top application bar
-      - Row 1 (*):    Main two-column split workspace (expands to fill window height)
-      - Row 2 (Auto): Bottom status bar
-    -->
     <Grid Margin="14">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -72,9 +66,9 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                 BorderThickness="1"
                 BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                Margin="0,0,0,12">
+                Margin="0,0,0,10">
             <DockPanel LastChildFill="False">
-                <!-- Left Branding: StoreTrainer Icon + Title + Subtitle -->
+                <!-- Left Branding -->
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
                     <Image Source="Assets/StoreTrainer.png"
                            Width="40"
@@ -107,51 +101,88 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Right Header Actions: Library Folder, Theme Toggle, Website, About & Legal -->
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                <!-- Right Header Actions -->
+                <WrapPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                     <Button x:Name="OpenLibraryFolderButton"
-                            Content="📂 Open My StoreFiles"
-                            Padding="11,6"
-                            Margin="0,0,8,0"
+                            Content="📂 Open StoreFiles"
+                            Padding="10,6"
+                            Margin="0,0,7,0"
                             Click="OpenLibraryFolderButton_OnClick"
-                            ToolTip="Open your saved My StoreFiles folder in File Explorer"
-                            AutomationProperties.Name="Open My StoreFiles Folder" />
+                            ToolTip="Open your Documents\StoreFiles folder in File Explorer"
+                            AutomationProperties.Name="Open StoreFiles Folder" />
                     <Button x:Name="ChangeLibraryFolderButton"
-                            Content="📁 Choose Library Folder..."
-                            Padding="11,6"
-                            Margin="0,0,8,0"
+                            Content="📁 Library Folder..."
+                            Padding="10,6"
+                            Margin="0,0,7,0"
                             Click="ChangeLibraryFolderButton_OnClick"
-                            ToolTip="Choose a different folder for your saved StoreFiles"
+                            ToolTip="Choose where your .stfx game profiles are stored"
                             AutomationProperties.Name="Choose StoreFiles Library Folder" />
+                    <Button x:Name="CheckUpdatesButton"
+                            Content="🔄 Check for Updates"
+                            Padding="10,6"
+                            Margin="0,0,7,0"
+                            Click="CheckUpdatesButton_OnClick"
+                            ToolTip="Check for updates across your installed RaggieSoft applications"
+                            AutomationProperties.Name="Check for Application Updates" />
                     <Button x:Name="ThemeToggleButton"
                             Content="🌓 Theme: System"
-                            Padding="11,6"
-                            Margin="0,0,8,0"
+                            Padding="10,6"
+                            Margin="0,0,7,0"
                             Click="ThemeToggleButton_OnClick"
                             AutomationProperties.Name="Switch Color Theme" />
                     <Button Content="ℹ️ About &amp; Legal"
-                            Padding="11,6"
+                            Padding="10,6"
                             Click="AboutAndLegalButton_OnClick"
-                            ToolTip="About RaggieSoft StoreTrainer &amp; Work of Fiction Notice"
                             AutomationProperties.Name="About RaggieSoft StoreTrainer and Work of Fiction Notice" />
+                </WrapPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- ===================================================================
+             ROW 1: NON-DESTRUCTIVE CLASSIC 'MY STOREFILES' (.STF) UPGRADE BANNER
+             =================================================================== -->
+        <Border x:Name="ClassicImportBannerBorder"
+                Grid.Row="1"
+                Padding="14,9"
+                Margin="0,0,0,10"
+                CornerRadius="8"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                Visibility="Collapsed">
+            <DockPanel LastChildFill="False">
+                <TextBlock x:Name="ClassicImportBannerText"
+                           DockPanel.Dock="Left"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Text="✨ Found classic StoreFiles (.stf) in your My StoreFiles folder — upgrade them to StoreTrainer 2.0 (.stfx) while keeping your originals untouched!" />
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <Button Content="🪄 Launch StoreFile Upgrade Wizard..."
+                            FontWeight="Bold"
+                            Padding="12,5"
+                            Margin="0,0,8,0"
+                            Click="OpenUpgradeWizardBannerButton_OnClick"
+                            AutomationProperties.Name="Launch Classic StoreFile Upgrade Wizard" />
+                    <Button Content="Dismiss"
+                            Padding="10,5"
+                            Click="DismissClassicBannerButton_OnClick"
+                            AutomationProperties.Name="Dismiss Classic StoreFile Upgrade Banner" />
                 </StackPanel>
             </DockPanel>
         </Border>
 
         <!-- ===================================================================
-             ROW 1: MAIN TWO-COLUMN SPLIT WORKSPACE (LIBRARY SIDEBAR + EDITOR)
+             ROW 2: MAIN TWO-COLUMN SPLIT WORKSPACE (LIBRARY SIDEBAR + EDITOR)
              =================================================================== -->
-        <Grid Grid.Row="1" Margin="0,0,0,10">
+        <Grid Grid.Row="2" Margin="0,0,0,10">
             <Grid.ColumnDefinitions>
-                <!-- Left Column: Saved StoreFiles Library Sidebar (330 DIPs wide) -->
-                <ColumnDefinition Width="335" />
+                <ColumnDefinition Width="345" />
                 <ColumnDefinition Width="14" />
-                <!-- Right Column: Selected Profile Editor & One-Click Launcher -->
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <!-- ...............................................................
-                 LEFT COLUMN: SAVED STOREFILES LIBRARY SIDEBAR
+                 LEFT COLUMN: SAVED STOREFILES (.STFX) LIBRARY SIDEBAR
                  ............................................................... -->
             <Border Grid.Column="0"
                     Padding="12"
@@ -164,11 +195,12 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- Sidebar Action Buttons: New Profile + Open Any .stf File -->
-                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                    <!-- Row 0: New Profile + Open File -->
+                    <Grid Grid.Row="0" Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="8" />
@@ -184,25 +216,35 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                                 AutomationProperties.Name="Create New Game Profile" />
                         <Button x:Name="ImportProfileButton"
                                 Grid.Column="2"
-                                Content="📂 Open File..."
+                                Content="📂 Open..."
                                 Padding="10,7"
                                 Click="ImportProfileButton_OnClick"
-                                ToolTip="Open a .stf StoreFile from anywhere on your computer"
+                                ToolTip="Open a .stfx profile or upgrade a classic .stf StoreFile"
                                 AutomationProperties.Name="Open StoreFile from Computer" />
                     </Grid>
 
-                    <!-- Instant Library Search Box -->
+                    <!-- Row 1: Dedicated Classic .stf Upgrade Wizard Shortcut -->
+                    <Button Grid.Row="1"
+                            Content="🪄 Upgrade Classic .stf StoreFiles..."
+                            Padding="8,5"
+                            Margin="0,0,0,8"
+                            HorizontalAlignment="Stretch"
+                            Click="OpenUpgradeWizardButton_OnClick"
+                            ToolTip="Import classic StoreTrainer 1.0 or 1.1 (.stf) profiles into StoreTrainer 2.0 (.stfx)"
+                            AutomationProperties.Name="Upgrade Classic StoreFiles Wizard" />
+
+                    <!-- Row 2: Instant Search Box -->
                     <TextBox x:Name="LibrarySearchBox"
-                             Grid.Row="1"
+                             Grid.Row="2"
                              Padding="8,6"
                              Margin="0,0,0,8"
                              TextChanged="LibrarySearchBox_OnTextChanged"
-                             ToolTip="Search saved profiles by game title, category, or notes"
+                             ToolTip="Search saved profiles by game title, category, shortcut keys, or notes"
                              AutomationProperties.Name="Search Saved Game Profiles" />
 
-                    <!-- Category & Favorites Filter Dropdown -->
+                    <!-- Row 3: Category & Favorites Filter -->
                     <ComboBox x:Name="LibraryCategoryFilterCombo"
-                              Grid.Row="2"
+                              Grid.Row="3"
                               SelectedIndex="0"
                               Margin="0,0,0,10"
                               SelectionChanged="LibraryCategoryFilterCombo_OnSelectionChanged"
@@ -217,8 +259,8 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                         <ComboBoxItem Content="Sports &amp; Racing" Tag="Sports &amp; Racing" />
                     </ComboBox>
 
-                    <!-- Scrollable List of Saved StoreFile Profiles -->
-                    <Grid Grid.Row="3">
+                    <!-- Row 4: Scrollable List of Saved .stfx Profiles (with Game .EXE Icons!) -->
+                    <Grid Grid.Row="4">
                         <ListBox x:Name="ProfilesListBox"
                                  SelectionChanged="ProfilesListBox_OnSelectionChanged"
                                  HorizontalContentAlignment="Stretch"
@@ -226,34 +268,43 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                                  AutomationProperties.Name="Saved StoreFiles List">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Padding="8,7" Margin="0,2">
-                                        <StackPanel>
-                                            <DockPanel LastChildFill="True">
-                                                <TextBlock DockPanel.Dock="Right"
-                                                           Text="{Binding FileNameBadge}"
-                                                           FontSize="10.5"
-                                                           Opacity="0.65"
-                                                           Margin="8,0,0,0"
-                                                           VerticalAlignment="Center" />
-                                                <TextBlock Text="{Binding DisplayTitle}"
-                                                           FontSize="13.5"
-                                                           FontWeight="SemiBold"
+                                    <Border Padding="7,7" Margin="0,2">
+                                        <DockPanel LastChildFill="True">
+                                            <!-- Real Game Executable Icon (falls back gracefully when null) -->
+                                            <Image DockPanel.Dock="Left"
+                                                   Source="{Binding GameIconSource, TargetNullValue=Assets/StoreTrainer.png}"
+                                                   Width="28"
+                                                   Height="28"
+                                                   Margin="0,0,10,0"
+                                                   VerticalAlignment="Center"
+                                                   RenderOptions.BitmapScalingMode="HighQuality" />
+                                            <StackPanel>
+                                                <DockPanel LastChildFill="True">
+                                                    <TextBlock DockPanel.Dock="Right"
+                                                               Text="{Binding FileNameBadge}"
+                                                               FontSize="10.5"
+                                                               Opacity="0.65"
+                                                               Margin="8,0,0,0"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding DisplayTitle}"
+                                                               FontSize="13.5"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding SubtitleSummary}"
+                                                           FontSize="11.5"
+                                                           Opacity="0.76"
+                                                           Margin="0,2,0,0"
                                                            TextTrimming="CharacterEllipsis" />
-                                            </DockPanel>
-                                            <TextBlock Text="{Binding SubtitleSummary}"
-                                                       FontSize="11.5"
-                                                       Opacity="0.76"
-                                                       Margin="0,2,0,0"
-                                                       TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
+                                            </StackPanel>
+                                        </DockPanel>
                                     </Border>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
 
-                        <!-- Friendly Empty-State Helper Shown When No Profiles Match -->
                         <TextBlock x:Name="EmptyLibraryText"
-                                   Text="No saved game profiles yet.&#x0a;&#x0a;Click &quot;➕ New Game Profile&quot; above — or drag and drop any game .exe or .stf file right onto this window to get started!"
+                                   Text="No saved game profiles yet.&#x0a;&#x0a;Click &quot;➕ New Game Profile&quot; above — or drag and drop any game .exe, trainer .zip, classic .stf, or .stfx file right onto this window!"
                                    TextWrapping="Wrap"
                                    TextAlignment="Center"
                                    Opacity="0.72"
@@ -267,87 +318,14 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
             </Border>
 
             <!-- ...............................................................
-                 RIGHT COLUMN: PROFILE EDITOR & ONE-CLICK LAUNCHER
+                 RIGHT COLUMN: PROFILE EDITOR & DUAL-MODE LAUNCHER
                  ............................................................... -->
             <ScrollViewer Grid.Column="2"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
 
-                    <!-- 1. TOP PROFILE ACTION BAR (LAUNCH, SAVE, DUPLICATE, DELETE) -->
-                    <Border Padding="16,14"
-                            Margin="0,0,0,12"
-                            CornerRadius="8"
-                            BorderThickness="1"
-                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                        <DockPanel LastChildFill="False">
-                            <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
-                                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock x:Name="ProfileHeaderTitleText"
-                                               Text="Untitled Game Profile"
-                                               FontSize="18"
-                                               FontWeight="Bold"
-                                               Margin="0,0,10,0" />
-                                    <Border x:Name="UnsavedBadgeBorder"
-                                            CornerRadius="4"
-                                            Padding="7,2"
-                                            BorderThickness="1"
-                                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                            VerticalAlignment="Center"
-                                            Visibility="Collapsed">
-                                        <TextBlock Text="Unsaved Changes"
-                                                   FontSize="11"
-                                                   FontWeight="SemiBold" />
-                                    </Border>
-                                </WrapPanel>
-                                <CheckBox x:Name="FavoriteCheckBox"
-                                          Content="★ Pin this game to the top of my Favorites list"
-                                          Margin="0,6,0,0"
-                                          Checked="EditorField_OnChanged"
-                                          Unchecked="EditorField_OnChanged"
-                                          AutomationProperties.Name="Pin Profile as Favorite" />
-                            </StackPanel>
-
-                            <WrapPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                                <Button x:Name="LaunchNowButton"
-                                        Content="▶ Launch Game &amp; Trainer"
-                                        Padding="16,9"
-                                        Margin="0,0,8,0"
-                                        FontWeight="Bold"
-                                        Click="LaunchNowButton_OnClick"
-                                        ToolTip="Save if needed and launch your game and companion trainer"
-                                        AutomationProperties.Name="Launch Game and Trainer" />
-                                <Button x:Name="SaveProfileButton"
-                                        Content="💾 Save"
-                                        Padding="12,9"
-                                        Margin="0,0,6,0"
-                                        Click="SaveProfileButton_OnClick"
-                                        AutomationProperties.Name="Save Game Profile" />
-                                <Button x:Name="SaveAsProfileButton"
-                                        Content="Save As..."
-                                        Padding="11,9"
-                                        Margin="0,0,6,0"
-                                        Click="SaveAsProfileButton_OnClick"
-                                        AutomationProperties.Name="Save Game Profile As New File" />
-                                <Button x:Name="DuplicateProfileButton"
-                                        Content="📋 Duplicate"
-                                        Padding="11,9"
-                                        Margin="0,0,6,0"
-                                        Click="DuplicateProfileButton_OnClick"
-                                        ToolTip="Create a copy of this profile (handy for testing different launch options)"
-                                        AutomationProperties.Name="Duplicate Game Profile" />
-                                <Button x:Name="DeleteProfileButton"
-                                        Content="🗑 Delete"
-                                        Padding="11,9"
-                                        Click="DeleteProfileButton_OnClick"
-                                        ToolTip="Delete this saved .stf profile from your library"
-                                        AutomationProperties.Name="Delete Game Profile" />
-                            </WrapPanel>
-                        </DockPanel>
-                    </Border>
-
-                    <!-- 2. GENERAL PROFILE DETAILS & LAUNCH TIMING CARD -->
+                    <!-- TOP ACTION BAR: DUAL LAUNCH (WITH TRAINER / CLEAN) + TOOLS + SAVE -->
                     <Border Padding="16,14"
                             Margin="0,0,0,12"
                             CornerRadius="8"
@@ -355,7 +333,109 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                             Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
                         <StackPanel>
-                            <TextBlock Text="1. Profile Name &amp; Launch Order"
+                            <DockPanel LastChildFill="False" Margin="0,0,0,10">
+                                <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
+                                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="ProfileHeaderTitleText"
+                                                   Text="Untitled Game Profile"
+                                                   FontSize="18.5"
+                                                   FontWeight="Bold"
+                                                   Margin="0,0,10,0" />
+                                        <Border x:Name="UnsavedBadgeBorder"
+                                                CornerRadius="4"
+                                                Padding="7,2"
+                                                BorderThickness="1"
+                                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                                VerticalAlignment="Center"
+                                                Visibility="Collapsed">
+                                            <TextBlock Text="Unsaved Changes"
+                                                       FontSize="11"
+                                                       FontWeight="SemiBold" />
+                                        </Border>
+                                    </WrapPanel>
+                                    <TextBlock x:Name="PlaytimeStatsText"
+                                               Text="Not launched yet"
+                                               FontSize="12"
+                                               Opacity="0.75"
+                                               Margin="0,3,0,0" />
+                                </StackPanel>
+
+                                <CheckBox x:Name="FavoriteCheckBox"
+                                          DockPanel.Dock="Right"
+                                          VerticalAlignment="Center"
+                                          Content="★ Favorite"
+                                          Checked="EditorField_OnChanged"
+                                          Unchecked="EditorField_OnChanged"
+                                          AutomationProperties.Name="Pin Profile as Favorite" />
+                            </DockPanel>
+
+                            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="LaunchNowButton"
+                                        Content="▶ Launch with Trainer"
+                                        Padding="15,8"
+                                        Margin="0,0,8,6"
+                                        FontWeight="Bold"
+                                        Click="LaunchNowButton_OnClick"
+                                        ToolTip="Save if needed, create any configured save backup, and launch your game with the selected trainer"
+                                        AutomationProperties.Name="Launch Game with Companion Trainer" />
+                                <Button x:Name="LaunchCleanButton"
+                                        Content="▶ Launch Game Only (No Trainer)"
+                                        Padding="13,8"
+                                        Margin="0,0,10,6"
+                                        Click="LaunchCleanButton_OnClick"
+                                        ToolTip="Start the game by itself without launching any trainer (great for multiplayer or standard play!)"
+                                        AutomationProperties.Name="Launch Game Only Without Trainer" />
+                                <Button x:Name="PopOutCheatCardButton"
+                                        Content="🪟 Floating Cheat Card"
+                                        Padding="11,8"
+                                        Margin="0,0,6,6"
+                                        Click="PopOutCheatCardButton_OnClick"
+                                        ToolTip="Open a compact Always-On-Top shortcut key card for a second monitor or borderless window"
+                                        AutomationProperties.Name="Open Floating Shortcut Cheat Card" />
+                                <Button x:Name="CreateDesktopShortcutButton"
+                                        Content="🔗 Desktop Shortcut"
+                                        Padding="11,8"
+                                        Margin="0,0,10,6"
+                                        Click="CreateDesktopShortcutButton_OnClick"
+                                        ToolTip="Place a 1-click shortcut for this game (with the game's own icon!) on your Windows Desktop"
+                                        AutomationProperties.Name="Create Desktop Game Shortcut" />
+                                <Button x:Name="SaveProfileButton"
+                                        Content="💾 Save"
+                                        Padding="12,8"
+                                        Margin="0,0,6,6"
+                                        Click="SaveProfileButton_OnClick"
+                                        AutomationProperties.Name="Save Game Profile" />
+                                <Button x:Name="SaveAsProfileButton"
+                                        Content="Save As..."
+                                        Padding="10,8"
+                                        Margin="0,0,6,6"
+                                        Click="SaveAsProfileButton_OnClick"
+                                        AutomationProperties.Name="Save Game Profile As New File" />
+                                <Button x:Name="DuplicateProfileButton"
+                                        Content="📋 Duplicate"
+                                        Padding="10,8"
+                                        Margin="0,0,6,6"
+                                        Click="DuplicateProfileButton_OnClick"
+                                        AutomationProperties.Name="Duplicate Game Profile" />
+                                <Button x:Name="DeleteProfileButton"
+                                        Content="🗑 Delete"
+                                        Padding="10,8"
+                                        Margin="0,0,0,6"
+                                        Click="DeleteProfileButton_OnClick"
+                                        AutomationProperties.Name="Delete Game Profile" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- CARD 1: PROFILE NAME, LAUNCH TIMING & RETRO COMPATIBILITY -->
+                    <Border Padding="16,14"
+                            Margin="0,0,0,12"
+                            CornerRadius="8"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                        <StackPanel>
+                            <TextBlock Text="1. Profile Name, Launch Order &amp; Classic Compatibility"
                                        FontSize="15"
                                        FontWeight="Bold"
                                        Margin="0,0,0,10" />
@@ -399,7 +479,6 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                                 </StackPanel>
                             </Grid>
 
-                            <!-- Mutually-Exclusive Launch Sequence Checkboxes + Smart Wait + Delay -->
                             <CheckBox x:Name="TrainerLaunchesGameCheckBox"
                                       Content="Trainer starts the game automatically (only launch the trainer program)"
                                       Margin="0,0,0,6"
@@ -417,33 +496,60 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                             <CheckBox x:Name="WaitForGameReadyCheckBox"
                                       Content="Wait until the first window finishes opening before starting the second program"
                                       IsChecked="True"
-                                      Margin="0,0,0,10"
+                                      Margin="0,0,0,6"
                                       Checked="EditorField_OnChanged"
                                       Unchecked="EditorField_OnChanged"
                                       AutomationProperties.Name="Wait Until First Window Finishes Opening" />
 
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="Extra pause between programs:"
-                                           VerticalAlignment="Center"
-                                           FontSize="12.5"
-                                           Margin="0,0,10,0" />
-                                <ComboBox x:Name="LaunchDelayCombo"
-                                          Width="175"
-                                          SelectedIndex="0"
-                                          SelectionChanged="LaunchDelayCombo_OnSelectionChanged"
-                                          AutomationProperties.Name="Extra Pause Between Programs">
-                                    <ComboBoxItem Content="None (0 seconds)" Tag="0" />
-                                    <ComboBoxItem Content="2 seconds" Tag="2" />
-                                    <ComboBoxItem Content="5 seconds" Tag="5" />
-                                    <ComboBoxItem Content="10 seconds" Tag="10" />
-                                    <ComboBoxItem Content="15 seconds" Tag="15" />
-                                    <ComboBoxItem Content="30 seconds" Tag="30" />
-                                </ComboBox>
-                            </StackPanel>
+                            <CheckBox x:Name="AutoCloseTrainerCheckBox"
+                                      Content="Automatically close the companion trainer when I exit the game"
+                                      IsChecked="True"
+                                      Margin="0,0,0,10"
+                                      Checked="EditorField_OnChanged"
+                                      Unchecked="EditorField_OnChanged"
+                                      AutomationProperties.Name="Automatically Close Trainer When Game Exits" />
+
+                            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,22,4" VerticalAlignment="Center">
+                                    <TextBlock Text="Extra pause between programs:"
+                                               VerticalAlignment="Center"
+                                               FontSize="12.5"
+                                               Margin="0,0,8,0" />
+                                    <ComboBox x:Name="LaunchDelayCombo"
+                                              Width="165"
+                                              SelectedIndex="0"
+                                              SelectionChanged="LaunchDelayCombo_OnSelectionChanged"
+                                              AutomationProperties.Name="Extra Pause Between Programs">
+                                        <ComboBoxItem Content="None (0 seconds)" Tag="0" />
+                                        <ComboBoxItem Content="2 seconds" Tag="2" />
+                                        <ComboBoxItem Content="5 seconds" Tag="5" />
+                                        <ComboBoxItem Content="10 seconds" Tag="10" />
+                                        <ComboBoxItem Content="15 seconds" Tag="15" />
+                                        <ComboBoxItem Content="30 seconds" Tag="30" />
+                                    </ComboBox>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4" VerticalAlignment="Center">
+                                    <TextBlock Text="Classic game processor mode:"
+                                               VerticalAlignment="Center"
+                                               FontSize="12.5"
+                                               Margin="0,0,8,0" />
+                                    <ComboBox x:Name="CpuCoreLimitCombo"
+                                              Width="285"
+                                              SelectedIndex="0"
+                                              SelectionChanged="CpuCoreLimitCombo_OnSelectionChanged"
+                                              ToolTip="Helps classic late-1990s and early-2000s PC games run at normal speed without audio or physics glitches"
+                                              AutomationProperties.Name="Classic Game Processor Mode">
+                                        <ComboBoxItem Content="Use all processor cores (Modern default)" Tag="0" />
+                                        <ComboBoxItem Content="Single core (Best for 1990s PC classics)" Tag="1" />
+                                        <ComboBoxItem Content="Dual core (Best for early-2000s PC games)" Tag="2" />
+                                    </ComboBox>
+                                </StackPanel>
+                            </WrapPanel>
                         </StackPanel>
                     </Border>
 
-                    <!-- 3. GAME PROGRAM CARD (SUPPORTS DRAGGING & DROPPING A GAME .EXE) -->
+                    <!-- CARD 2: GAME PROGRAM (DRAG & DROP GAME .EXE) -->
                     <Border x:Name="GameSectionBorder"
                             Padding="16,14"
                             Margin="0,0,0,12"
@@ -457,7 +563,7 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                         <StackPanel>
                             <DockPanel LastChildFill="False" Margin="0,0,0,8">
                                 <TextBlock DockPanel.Dock="Left"
-                                           Text="2. Game Program (you can drag and drop your game file here)"
+                                           Text="2. Game Program (drag and drop your game .exe here)"
                                            FontSize="15"
                                            FontWeight="Bold"
                                            VerticalAlignment="Center" />
@@ -497,7 +603,7 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                                         Content="📂 Folder"
                                         Padding="10,6"
                                         Click="OpenGameFolderButton_OnClick"
-                                        ToolTip="Open the game's folder in File Explorer"
+                                        ToolTip="Open the game's installation folder in File Explorer"
                                         AutomationProperties.Name="Open Game Folder" />
                             </Grid>
 
@@ -531,7 +637,7 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                         </StackPanel>
                     </Border>
 
-                    <!-- 4. COMPANION TRAINER CARD + TRAINER FILE VERIFICATION -->
+                    <!-- CARD 3: COMPANION TRAINERS (MULTI-TRAINER + ZIP EXTRACTOR + .NFO VIEWER) -->
                     <Border x:Name="TrainerSectionBorder"
                             Padding="16,14"
                             Margin="0,0,0,12"
@@ -545,7 +651,7 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                         <StackPanel>
                             <DockPanel LastChildFill="False" Margin="0,0,0,8">
                                 <TextBlock DockPanel.Dock="Left"
-                                           Text="3. Companion Trainer Program (drag and drop your trainer file here)"
+                                           Text="3. Companion Trainers (drag and drop a trainer .exe or .zip archive here)"
                                            FontSize="15"
                                            FontWeight="Bold"
                                            VerticalAlignment="Center" />
@@ -557,35 +663,93 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                                            VerticalAlignment="Center" />
                             </DockPanel>
 
-                            <TextBlock Text="Trainer Program File:"
-                                       FontSize="12"
-                                       Opacity="0.84"
-                                       Margin="0,0,0,4" />
+                            <!-- Multi-Trainer Selector + Add / Remove + Extract Trainer ZIP + View .NFO -->
                             <Grid Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="ActiveTrainerCombo"
+                                          Grid.Column="0"
+                                          DisplayMemberPath="ComboDisplayLabel"
+                                          Padding="8,5"
+                                          SelectionChanged="ActiveTrainerCombo_OnSelectionChanged"
+                                          ToolTip="Switch between multiple trainers saved for this game (for example, different game patch versions)"
+                                          AutomationProperties.Name="Selected Companion Trainer" />
+                                <WrapPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="➕ Add Trainer"
+                                            Padding="10,5"
+                                            Margin="0,0,6,0"
+                                            Click="AddTrainerSlotButton_OnClick"
+                                            ToolTip="Add another trainer slot to this game profile"
+                                            AutomationProperties.Name="Add Another Trainer Slot" />
+                                    <Button x:Name="RemoveTrainerSlotButton"
+                                            Content="➖ Remove"
+                                            Padding="9,5"
+                                            Margin="0,0,6,0"
+                                            Click="RemoveTrainerSlotButton_OnClick"
+                                            AutomationProperties.Name="Remove Selected Trainer Slot" />
+                                    <Button x:Name="ExtractTrainerZipButton"
+                                            Content="📦 Extract Trainer ZIP..."
+                                            FontWeight="SemiBold"
+                                            Padding="11,5"
+                                            Margin="0,0,6,0"
+                                            Click="ExtractTrainerZipButton_OnClick"
+                                            ToolTip="Unpack a downloaded .zip trainer archive into your StoreFiles folder or directly into the game's folder"
+                                            AutomationProperties.Name="Extract Trainer ZIP Archive" />
+                                    <Button x:Name="ViewTrainerNfoButton"
+                                            Content="📄 View Trainer Info (.NFO)"
+                                            Padding="11,5"
+                                            Click="ViewTrainerNfoButton_OnClick"
+                                            ToolTip="Read classic .nfo, file_id.diz, or readme files and auto-import shortcut keys"
+                                            AutomationProperties.Name="View Trainer Info File" />
+                                </WrapPanel>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="210" />
+                                    <ColumnDefinition Width="10" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="6" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="TrainerPathBox"
-                                         Grid.Column="0"
-                                         Padding="8,6"
-                                         TextChanged="TrainerPathBox_OnTextChanged"
-                                         AutomationProperties.Name="Trainer Program File Path" />
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Trainer Nickname:"
+                                               FontSize="12"
+                                               Opacity="0.84"
+                                               Margin="0,0,0,4" />
+                                    <TextBox x:Name="TrainerLabelBox"
+                                             Padding="8,6"
+                                             TextChanged="TrainerLabelBox_OnTextChanged"
+                                             AutomationProperties.Name="Trainer Nickname" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Trainer Program File:"
+                                               FontSize="12"
+                                               Opacity="0.84"
+                                               Margin="0,0,0,4" />
+                                    <TextBox x:Name="TrainerPathBox"
+                                             Padding="8,6"
+                                             TextChanged="TrainerPathBox_OnTextChanged"
+                                             AutomationProperties.Name="Trainer Program File Path" />
+                                </StackPanel>
                                 <Button x:Name="BrowseTrainerButton"
-                                        Grid.Column="2"
+                                        Grid.Column="4"
+                                        VerticalAlignment="Bottom"
                                         Content="Browse..."
                                         Padding="12,6"
                                         Click="BrowseTrainerButton_OnClick"
                                         AutomationProperties.Name="Browse for Trainer Program" />
                                 <Button x:Name="OpenTrainerFolderButton"
-                                        Grid.Column="4"
+                                        Grid.Column="6"
+                                        VerticalAlignment="Bottom"
                                         Content="📂 Folder"
                                         Padding="10,6"
                                         Click="OpenTrainerFolderButton_OnClick"
-                                        ToolTip="Open the trainer's folder in File Explorer"
                                         AutomationProperties.Name="Open Trainer Folder" />
                             </Grid>
 
@@ -617,7 +781,6 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                                 </StackPanel>
                             </Grid>
 
-                            <!-- Trainer Safety Verification Row -->
                             <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <CheckBox x:Name="VerifyTrainerCheckBox"
                                           Content="Warn me before launching if this trainer file ever changes on disk"
@@ -627,12 +790,11 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                                           Unchecked="VerifyTrainerCheckBox_OnChanged"
                                           AutomationProperties.Name="Warn Before Launching If Trainer File Changes" />
                                 <Button x:Name="PinTrainerFingerprintButton"
-                                        Content="🛡 Remember Trusted Trainer File"
+                                        Content="🛡 Remember Trusted Trainer Snapshot"
                                         Padding="10,5"
                                         Margin="0,0,10,0"
                                         Click="PinTrainerFingerprintButton_OnClick"
-                                        ToolTip="Record a safety snapshot of your current trainer file so StoreTrainer can warn you if the file is ever altered"
-                                        AutomationProperties.Name="Remember Trusted Trainer File" />
+                                        AutomationProperties.Name="Remember Trusted Trainer Snapshot" />
                                 <TextBlock x:Name="TrainerFingerprintStatusText"
                                            Text="No trusted trainer snapshot recorded yet"
                                            FontSize="11.5"
@@ -642,7 +804,7 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                         </StackPanel>
                     </Border>
 
-                    <!-- 5. TRAINER HOTKEY & CHEAT NOTES CARD -->
+                    <!-- CARD 4: PRE-LAUNCH SAVE-GAME BACKUP & 1-CLICK ROLLBACK -->
                     <Border Padding="16,14"
                             Margin="0,0,0,12"
                             CornerRadius="8"
@@ -650,28 +812,115 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                             Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
                         <StackPanel>
-                            <TextBlock Text="4. Personal Hotkey &amp; Launch Notes"
-                                       FontSize="15"
-                                       FontWeight="Bold"
-                                       Margin="0,0,0,6" />
-                            <TextBlock Text="Jot down trainer shortcut keys (for example: F1 = Unlimited Health, F2 = Gold) so you never have to hunt for old readme files:"
+                            <DockPanel LastChildFill="False" Margin="0,0,0,6">
+                                <TextBlock DockPanel.Dock="Left"
+                                           Text="4. Pre-Launch Save-Game Backup (&quot;Trainer Insurance&quot;)"
+                                           FontSize="15"
+                                           FontWeight="Bold"
+                                           VerticalAlignment="Center" />
+                                <Button DockPanel.Dock="Right"
+                                        Content="🛡 Manage &amp; Restore Save Backups..."
+                                        Padding="11,5"
+                                        Click="ManageSaveBackupsButton_OnClick"
+                                        AutomationProperties.Name="Manage and Restore Save-Game Backups" />
+                            </DockPanel>
+
+                            <TextBlock Text="Protect your campaign saves before testing unlimited-stat or inventory trainers:"
                                        FontSize="12"
                                        Opacity="0.82"
-                                       TextWrapping="Wrap"
                                        Margin="0,0,0,8" />
-                            <TextBox x:Name="ProfileNotesBox"
-                                     AcceptsReturn="True"
-                                     TextWrapping="Wrap"
-                                     MinHeight="76"
-                                     MaxHeight="150"
-                                     VerticalScrollBarVisibility="Auto"
-                                     Padding="8,6"
-                                     TextChanged="EditorTextBox_OnTextChanged"
-                                     AutomationProperties.Name="Personal Hotkey and Launch Notes" />
+
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="SaveFolderPathBox"
+                                         Grid.Column="0"
+                                         Padding="8,6"
+                                         TextChanged="EditorTextBox_OnTextChanged"
+                                         ToolTip="Folder where this game stores your saved games"
+                                         AutomationProperties.Name="Game Save Folder Path" />
+                                <Button Grid.Column="2"
+                                        Content="Browse Save Folder..."
+                                        Padding="12,6"
+                                        Click="BrowseSaveFolderButton_OnClick"
+                                        AutomationProperties.Name="Browse for Game Save Folder" />
+                            </Grid>
+
+                            <CheckBox x:Name="BackupSavesBeforeLaunchCheckBox"
+                                      Content="Automatically back up my saved games (keeps last 5 snapshots) before launching with a trainer"
+                                      Checked="EditorField_OnChanged"
+                                      Unchecked="EditorField_OnChanged"
+                                      AutomationProperties.Name="Automatically Back Up Saved Games Before Launch" />
                         </StackPanel>
                     </Border>
 
-                    <!-- 6. MANDATORY SCROLLABLE WORK OF FICTION & LICENSING FOOTER -->
+                    <!-- CARD 5: STRUCTURED SHORTCUT CHEAT TABLE & PERSONAL NOTES -->
+                    <Border Padding="16,14"
+                            Margin="0,0,0,12"
+                            CornerRadius="8"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                        <StackPanel>
+                            <DockPanel LastChildFill="False" Margin="0,0,0,6">
+                                <TextBlock DockPanel.Dock="Left"
+                                           Text="5. Trainer Shortcut Keys &amp; Personal Notes"
+                                           FontSize="15"
+                                           FontWeight="Bold"
+                                           VerticalAlignment="Center" />
+                                <WrapPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <Button Content="➕ Add Shortcut Row"
+                                            Padding="10,4"
+                                            Margin="0,0,6,0"
+                                            Click="AddHotkeyRowButton_OnClick"
+                                            AutomationProperties.Name="Add Shortcut Key Row" />
+                                    <Button Content="🪟 Open Floating Cheat Card"
+                                            Padding="10,4"
+                                            Click="PopOutCheatCardButton_OnClick"
+                                            AutomationProperties.Name="Open Floating Cheat Card Window" />
+                                </WrapPanel>
+                            </DockPanel>
+
+                            <DataGrid x:Name="HotkeysDataGrid"
+                                      AutoGenerateColumns="False"
+                                      CanUserAddRows="True"
+                                      CanUserDeleteRows="True"
+                                      HeadersVisibility="Column"
+                                      MinHeight="95"
+                                      MaxHeight="190"
+                                      Margin="0,0,0,10"
+                                      CellEditEnding="HotkeysDataGrid_OnCellEditEnding"
+                                      AutomationProperties.Name="Trainer Shortcut Keys Table">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Shortcut Key (e.g., Numpad 1 or F1)"
+                                                        Binding="{Binding Keys, UpdateSourceTrigger=PropertyChanged}"
+                                                        Width="220" />
+                                    <DataGridTextColumn Header="Trainer Effect (e.g., Unlimited Health)"
+                                                        Binding="{Binding Effect, UpdateSourceTrigger=PropertyChanged}"
+                                                        Width="*" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <TextBlock Text="Additional Personal Notes:"
+                                       FontSize="12"
+                                       Opacity="0.82"
+                                       Margin="0,0,0,4" />
+                            <TextBox x:Name="ProfileNotesBox"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     MinHeight="64"
+                                     MaxHeight="135"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Padding="8,6"
+                                     TextChanged="EditorTextBox_OnTextChanged"
+                                     AutomationProperties.Name="Personal Launch Notes" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- CARD 6: MANDATORY WORK OF FICTION & LICENSING FOOTER -->
                     <Border Padding="14,12"
                             Margin="0,0,0,4"
                             CornerRadius="8"
@@ -694,33 +943,32 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                                        TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
-
                 </StackPanel>
             </ScrollViewer>
         </Grid>
 
         <!-- ===================================================================
-             ROW 2: BOTTOM STATUS & LIBRARY FOLDER BAR
+             ROW 3: BOTTOM STATUS BAR
              =================================================================== -->
-        <Border Grid.Row="2"
-                Padding="14,8"
-                CornerRadius="8"
+        <Border Grid.Row="3"
+                Padding="12,7"
+                CornerRadius="6"
                 BorderThickness="1"
                 BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-            <DockPanel LastChildFill="False">
-                <TextBlock x:Name="StatusBannerText"
-                           DockPanel.Dock="Left"
-                           Text="✅ Ready"
-                           FontSize="12.5"
-                           FontWeight="SemiBold"
-                           VerticalAlignment="Center" />
+            <DockPanel LastChildFill="True">
                 <TextBlock x:Name="ActiveLibraryPathText"
                            DockPanel.Dock="Right"
-                           Text="📂 My StoreFiles"
+                           Text="📂 StoreFiles"
                            FontSize="11.5"
-                           Opacity="0.78"
+                           Opacity="0.74"
+                           Margin="12,0,0,0"
                            VerticalAlignment="Center" />
+                <TextBlock x:Name="StatusBannerText"
+                           Text="Ready — select a game profile or drag a game .exe / trainer .zip onto this window"
+                           FontSize="12"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
             </DockPanel>
         </Border>
     </Grid>

@@ -8,62 +8,71 @@
 //     This is the C# startup coordinator that runs the instant 'StoreTrainer.exe'
 //     starts on Windows — before any window appears on screen.
 //
-//   What three important jobs happen here?
-//     1. Named OS Mutex ('RaggieSoft_StoreTrainer_Mutex'):
-//        Creates a named Windows kernel flag while StoreTrainer is running. Notice
-//        we use the exact same Mutex name in BOTH classic VB6 StoreTrainer v1.1 AND
-//        modern StoreTrainer 2.0! That means Inno Setup ('StoreTrainer.iss') and
-//        NSIS ('TSSetup-Patch.nsi') both know if ANY generation of StoreTrainer is
-//        currently open during an upgrade or uninstall.
-//     2. Command-Line Switch Routing ('/l', '/e', '--version', and '.stf' paths):
-//        - 'StoreTrainer.exe /l "C:\...\Doom.stf"': Loads that profile, starts the
-//          game and trainer in the right order, and exits with code 0 (no editor
-//          window flashed on screen!).
-//        - 'StoreTrainer.exe /e "C:\...\Doom.stf"' (or a 'raggiesoft-storetrainer://'
-//          deep link): Opens MainWindow with that profile selected for editing.
-//        - 'StoreTrainer.exe --version': Writes version info to a small dialog/stdout
-//          and exits cleanly.
-//     3. Normal Interactive Launch:
-//        Constructs and displays 'MainWindow' when launched from the Start Menu,
-//        Desktop shortcut, or RaggieSoft Launcher.
+//   What four important jobs happen here?
+//     1. UAC-Elevated Trainer File Copy Helper ('--elevated-copy "<src>" "<dest>"'):
+//        When a user extracts a '.zip' trainer directly into a game's installation
+//        folder inside 'C:\Program Files (x86)\...', Windows requires administrator
+//        permission. StoreTrainer re-launches itself briefly with 'Verb = "runas"'
+//        and '--elevated-copy', copies the staged trainer files into the game folder,
+//        and exits immediately with code 0!
+//     2. Named OS Mutex ('RaggieSoft_StoreTrainer_Mutex'):
+//        Uses the exact same Mutex name in BOTH classic VB6 StoreTrainer v1.1 AND
+//        modern StoreTrainer 2.0 so Inno Setup, NSIS, and RaggieSoftUpdate.exe all
+//        know if StoreTrainer is open during an upgrade or uninstall.
+//     3. Command-Line Switch Routing ('/l', '/e', '.stfx', and classic '.stf'):
+//        - '/l "Game.stfx"' (or double-clicking a '.stfx'): Launches the game and
+//          companion trainer immediately without opening the editor window, waiting
+//          quietly in the background if Auto-Close Trainer or Playtime tracking is active!
+//        - '/e "Game.stfx"': Opens MainWindow with that profile selected for editing.
+//        - Any classic '.stf' file (via '/l', '/e', or double-click): Opens MainWindow
+//          and immediately launches the 3-step **StoreFile Upgrade Wizard**!
+//     4. Normal Interactive Launch:
+//        Opens 'MainWindow' when started from Start Menu, Desktop, or RaggieSoft Launcher.
 // ================================================================================
 
-using System.IO;                // 'File.Exists' and 'Path' helpers for inspecting '.stf' paths.
-using System.Threading;         // 'Mutex' for installer/uninstaller running-instance detection.
-using System.Windows;           // WPF 'Application', 'StartupEventArgs', 'ExitEventArgs', 'MessageBox'.
-using StoreTrainer.Services;    // 'StoreTrainerService' for loading & launching '.stf' profiles.
+using System.IO;
+using System.Threading;
+using System.Windows;
+using StoreTrainer.Services;
 
 namespace StoreTrainer;
 
 public partial class App : Application
 {
-    // Shared Win32 Mutex name watched by both NSIS (v1.1) and Inno Setup 7 (v2.0).
-    // Note: Avoiding a 'Local\' backslash prefix keeps the name 100% identical to
-    // classic Win9x-compatible VB6 'CreateMutexA(0&, 0&, "RaggieSoft_StoreTrainer_Mutex")'.
+    // Shared Win32 Mutex name watched by NSIS (v1.1), Inno Setup 7 (v2.0), and RaggieSoftUpdate.exe.
     public const string AppMutexName = "RaggieSoft_StoreTrainer_Mutex";
 
-    // Keeps the Mutex alive in memory until OnExit runs so the .NET Garbage Collector
-    // never closes the kernel handle while MainWindow is still open.
     private Mutex? _instanceMutex;
 
-    // Optional '.stf' file path passed via '/e "file.stf"' so MainWindow can auto-select
-    // and open that profile as soon as the window finishes loading.
+    // Optional '.stfx' file path passed via '/e "file.stfx"' so MainWindow opens it in the editor.
     public static string? StartupEditProfilePath { get; private set; }
 
-    // Fires when StoreTrainer.exe starts up.
+    // Optional classic '.stf' file path passed on startup so MainWindow opens the StoreFile Upgrade Wizard!
+    public static string? StartupClassicStfUpgradePath { get; private set; }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
-        // Step 1: Register the running-instance Mutex in Windows kernel memory.
+        // Step 1: Check for UAC-elevated trainer copy helper BEFORE acquiring the app mutex!
+        if (e.Args.Length >= 3 &&
+            string.Equals(e.Args[0], "--elevated-copy", StringComparison.OrdinalIgnoreCase))
+        {
+            var exitCode = StoreTrainerService.PerformElevatedCopy(
+                e.Args[1].Trim('"'),
+                e.Args[2].Trim('"'));
+            Shutdown(exitCode);
+            return;
+        }
+
+        // Step 2: Register the running-instance Mutex in Windows kernel memory.
         _instanceMutex = new Mutex(initiallyOwned: false, name: AppMutexName);
 
         base.OnStartup(e);
 
-        // Step 2: Inspect command-line arguments ('e.Args' is everything typed after 'StoreTrainer.exe').
+        // Step 3: Inspect command-line switches ('/l', '/e', '--version', deep links, or file paths).
         if (e.Args.Length > 0)
         {
             var firstArg = e.Args[0].Trim();
 
-            // Case A: '--version' diagnostic flag
             if (string.Equals(firstArg, "--version", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(firstArg, "/version", StringComparison.OrdinalIgnoreCase))
             {
@@ -76,23 +85,36 @@ public partial class App : Application
                 return;
             }
 
-            // Case B: '/l "path\to\profile.stf"' (or '-l') -> Fast-launch game & trainer, then exit!
             if ((string.Equals(firstArg, "/l", StringComparison.OrdinalIgnoreCase) ||
                  string.Equals(firstArg, "-l", StringComparison.OrdinalIgnoreCase)) &&
                 e.Args.Length >= 2)
             {
-                await LaunchProfileDirectlyAndShutdownAsync(e.Args[1]);
-                return;
+                var target = e.Args[1].Trim('"');
+                if (target.EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Classic 1.0/1.1 .stf -> open StoreFile Upgrade Wizard in MainWindow!
+                    StartupClassicStfUpgradePath = target;
+                }
+                else
+                {
+                    await LaunchProfileDirectlyAndShutdownAsync(target);
+                    return;
+                }
             }
-
-            // Case C: '/e "path\to\profile.stf"' (or '-e') -> Open profile inside MainWindow editor!
-            if ((string.Equals(firstArg, "/e", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(firstArg, "-e", StringComparison.OrdinalIgnoreCase)) &&
-                e.Args.Length >= 2)
+            else if ((string.Equals(firstArg, "/e", StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(firstArg, "-e", StringComparison.OrdinalIgnoreCase)) &&
+                     e.Args.Length >= 2)
             {
-                StartupEditProfilePath = e.Args[1].Trim('"');
+                var target = e.Args[1].Trim('"');
+                if (target.EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
+                {
+                    StartupClassicStfUpgradePath = target;
+                }
+                else
+                {
+                    StartupEditProfilePath = target;
+                }
             }
-            // Case D: 'raggiesoft-storetrainer://edit?file=...' or 'raggiesoft-storetrainer://launch?file=...'
             else if (firstArg.StartsWith("raggiesoft-storetrainer://", StringComparison.OrdinalIgnoreCase))
             {
                 HandleCustomProtocolUri(firstArg, out var launchImmediatelyPath);
@@ -102,27 +124,32 @@ public partial class App : Application
                     return;
                 }
             }
-            // Case E: Bare '"C:\...\MyGame.stf"' passed directly (e.g., dragging a .stf onto StoreTrainer.exe)
-            // -> Matches Windows Explorer double-click expectation: launch immediately!
-            else if (firstArg.EndsWith(".stf", StringComparison.OrdinalIgnoreCase) &&
-                     File.Exists(firstArg.Trim('"')))
+            else
             {
-                await LaunchProfileDirectlyAndShutdownAsync(firstArg.Trim('"'));
-                return;
+                var unquoted = firstArg.Trim('"');
+                if (unquoted.EndsWith(".stfx", StringComparison.OrdinalIgnoreCase) && File.Exists(unquoted))
+                {
+                    await LaunchProfileDirectlyAndShutdownAsync(unquoted);
+                    return;
+                }
+                if (unquoted.EndsWith(".stf", StringComparison.OrdinalIgnoreCase) && File.Exists(unquoted))
+                {
+                    StartupClassicStfUpgradePath = unquoted;
+                }
             }
         }
 
-        // Step 3: Standard interactive launch — construct and display MainWindow!
+        // Step 4: Standard interactive launch — construct and display MainWindow!
         var window = new MainWindow();
         MainWindow = window;
         window.Show();
     }
 
-    // Loads a '.stf' profile, launches its configured game and trainer, shows a friendly
-    // message ONLY if something went wrong (e.g., moved game file), and exits cleanly.
-    private async Task LaunchProfileDirectlyAndShutdownAsync(string rawPath)
+    private async Task LaunchProfileDirectlyAndShutdownAsync(string cleanPath)
     {
-        var cleanPath = rawPath.Trim().Trim('"');
+        // Keep the WPF process alive without any visible window while awaiting game exit!
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
         var service = new StoreTrainerService();
         var loadResult = service.LoadStoreFile(cleanPath);
 
@@ -137,16 +164,19 @@ public partial class App : Application
             return;
         }
 
-        var launchResult = await service.LaunchProfileAsync(loadResult.Profile, confirmFingerprintMismatch: prompt =>
-        {
-            var answer = MessageBox.Show(
-                prompt,
-                "Trainer File Changed — RaggieSoft StoreTrainer",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning,
-                MessageBoxResult.No);
-            return answer == MessageBoxResult.Yes;
-        });
+        var launchResult = await service.LaunchProfileAsync(
+            loadResult.Profile,
+            launchWithTrainer: true,
+            confirmFingerprintMismatch: prompt =>
+            {
+                var answer = MessageBox.Show(
+                    prompt,
+                    "Trainer File Changed — RaggieSoft StoreTrainer",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning,
+                    MessageBoxResult.No);
+                return answer == MessageBoxResult.Yes;
+            });
 
         if (!launchResult.Success)
         {
@@ -159,10 +189,15 @@ public partial class App : Application
             return;
         }
 
+        // Wait invisibly for the game session to end so Auto-Close Trainer & Playtime tracking finish cleanly!
+        if (launchResult.SessionMonitorTask is not null)
+        {
+            await launchResult.SessionMonitorTask;
+        }
+
         Shutdown(0);
     }
 
-    // Parses 'raggiesoft-storetrainer://' deep links into either an edit target or immediate launch target.
     private static void HandleCustomProtocolUri(string rawUri, out string? launchImmediatelyPath)
     {
         launchImmediatelyPath = null;
@@ -171,7 +206,6 @@ public partial class App : Application
             return;
         }
 
-        // Parse simple '?file=...' query parameter without external NuGet packages.
         var query = uri.Query.TrimStart('?');
         foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -179,7 +213,11 @@ public partial class App : Application
             if (kv.Length == 2 && string.Equals(kv[0], "file", StringComparison.OrdinalIgnoreCase))
             {
                 var decodedPath = Uri.UnescapeDataString(kv[1]).Trim('"');
-                if (string.Equals(uri.Host, "launch", StringComparison.OrdinalIgnoreCase))
+                if (decodedPath.EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
+                {
+                    StartupClassicStfUpgradePath = decodedPath;
+                }
+                else if (string.Equals(uri.Host, "launch", StringComparison.OrdinalIgnoreCase))
                 {
                     launchImmediatelyPath = decodedPath;
                 }
@@ -192,7 +230,6 @@ public partial class App : Application
         }
     }
 
-    // Releases the OS Mutex cleanly when StoreTrainer exits.
     protected override void OnExit(ExitEventArgs e)
     {
         _instanceMutex?.Dispose();

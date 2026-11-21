@@ -6,34 +6,33 @@
 // PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
 //   What is this file?
 //     This is the C# controller ("code-behind") paired with MainWindow.xaml. Every
-//     button click, search keystroke, drag-and-drop gesture, and theme switch in
-//     StoreTrainer 2.0 is handled right here:
-//       1. Automatic Library Discovery: Scans your 'Documents\My StoreFiles' folder
-//          (or any existing custom folder saved in classic 'TStore.ini') and binds
-//          every '.stf' game profile to the left-hand sidebar list.
-//       2. Unsaved-Changes Guard: Tracks whether you have edited fields on the right
-//          without saving yet, prompting politely before switching profiles or closing
-//          the window so you never lose work by accident.
-//       3. Drag-and-Drop Convenience: Drop a '.stf' file anywhere on the window to
-//          open it, or drop a '.exe' file onto the Game or Trainer card to fill in
-//          its path and title automatically!
-//       4. Mutual-Exclusivity Enforcement: Checking "Trainer starts the game
-//          automatically" automatically disables the separate Game fields and
-//          unchecks "Start the game first", fulfilling the exact design rule first
-//          noted in classic StoreTrainer's 2018 developer notes.
+//     button click, drag-and-drop gesture, ZIP archive extraction, classic '.stf'
+//     upgrade wizard flow, and launch sequence is coordinated right here:
+//       1. Modern '.stfx' Library Discovery ('Documents\StoreFiles\*.stfx') with
+//          automatic detection of unmigrated classic '.stf' profiles in 'My StoreFiles'.
+//       2. Multiple Trainers per Game + Trainer '.ZIP' Archive Extractor (including
+//          automatic Windows UAC permission prompt when extracting into Program Files!)
+//          + Classic '.NFO' / 'file_id.diz' ASCII Art Viewer & Hotkey Importer.
+//       3. Dual Launch Modes: "▶ Launch with Trainer" AND "▶ Launch Game Only (No Trainer)",
+//          with Pre-Launch Save-Game Backup, CPU Core Limiter, Playtime Tracking, and
+//          Auto-Close Companion Trainer on Game Exit.
+//       4. Floating Always-On-Top Cheat Card, 1-Click Desktop Game Shortcut, and
+//          1-Click Check for Updates via 'RaggieSoftUpdate.exe'!
 // ================================================================================
 
-using System.ComponentModel;    // 'CancelEventArgs' for intercepting window close when unsaved edits exist.
-using System.Diagnostics;       // 'Process.Start' for opening folders in Windows File Explorer.
-using System.IO;                // 'File', 'Directory', and 'Path' helpers.
-using System.Windows;           // Core WPF window, drag-and-drop, and dialog classes.
-using System.Windows.Controls;  // 'ListBox', 'ComboBoxItem', 'TextChangedEventArgs', etc.
-using Microsoft.Win32;          // Native Windows 'OpenFileDialog', 'SaveFileDialog', and 'OpenFolderDialog'.
-using RaggieSoft.Core.Models;   // 'RaggieSoftLegalCopy' for the Work of Fiction & Licensing notice.
-using RaggieSoft.Core.Services; // 'RaggieSoftWorkspaceLocator' for first-run legal notice persistence.
-using RaggieSoft.SharedWpf;     // 'RaggieSoftWpfDialogs' for shared First-Run & About modals.
-using StoreTrainer.Models;      // 'StoreFileProfile' data model.
-using StoreTrainer.Services;    // 'StoreTrainerService' INI & process launcher engine.
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using Microsoft.Win32;
+using RaggieSoft.Core.Models;
+using RaggieSoft.Core.Services;
+using RaggieSoft.SharedWpf;
+using StoreTrainer.Models;
+using StoreTrainer.Services;
+using StoreTrainer.Windows;
 
 namespace StoreTrainer;
 
@@ -44,28 +43,31 @@ public partial class MainWindow : Window
     private readonly RaggieSoftWorkspaceLocator _locator = new();
     private readonly StoreTrainerService _service = new();
 
-    // Active library folder path (defaults to 'Documents\My StoreFiles').
     private string _libraryFolder = string.Empty;
-    // Complete list of '.stf' profiles loaded from '_libraryFolder'.
     private List<StoreFileProfile> _allProfiles = [];
-    // Currently edited profile in the right-hand pane.
     private StoreFileProfile _currentProfile = new();
+    private readonly ObservableCollection<HotkeyItem> _boundHotkeys = [];
 
-    // Guard flag set to 'true' while C# is populating TextBoxes/CheckBoxes from a profile
-    // so programmatic updates don't falsely trigger the "Unsaved Changes" badge!
     private bool _isBindingEditor;
-    // Guard flag preventing SelectionChanged recursion when restoring a ListBox selection.
+    private bool _isBindingTrainerSlot;
     private bool _isUpdatingSelection;
-    // True when the user has modified fields in the editor since the last save/load.
     private bool _isDirty;
-    // Current color theme label ("System", "Dark", or "Light").
     private string _currentThemeLabel = "System";
 
     public MainWindow()
     {
         InitializeComponent();
 
-        // Populate the mandatory RaggieSoft Work of Fiction & Creative Licensing footer.
+        HotkeysDataGrid.ItemsSource = _boundHotkeys;
+        _boundHotkeys.CollectionChanged += (_, _) =>
+        {
+            if (!_isBindingEditor)
+            {
+                SetDirtyState(true);
+            }
+        };
+
+        // Populate mandatory RaggieSoft Work of Fiction & Creative Licensing footer.
         ScrollableFooterTitleText.Text = RaggieSoftLegalCopy.FictitiousDisclaimerTitle.ToUpperInvariant();
         ScrollableFooterBodyText.Text = RaggieSoftLegalCopy.FictitiousDisclaimerBody;
         ScrollableFooterLicenseText.Text = RaggieSoftLegalCopy.CreativeLicenseSummary;
@@ -76,28 +78,33 @@ public partial class MainWindow : Window
         Closing += MainWindow_OnClosing;
     }
 
-    // Runs once the StoreTrainer window appears on screen.
-    private void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
+    private async void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
     {
-        // Show the one-time First-Run Work of Fiction acknowledgement modal if not yet accepted.
         RaggieSoftWpfDialogs.EnsureFirstRunFictionNoticeAcknowledged(this, _locator);
 
         _libraryFolder = _service.EnsureLibraryFolder();
-        ActiveLibraryPathText.Text = $"📂 Library: {_libraryFolder}";
+        ActiveLibraryPathText.Text = $"📂 StoreFiles: {_libraryFolder}";
 
         ReloadLibraryList(selectFilePath: App.StartupEditProfilePath);
+        RefreshClassicImportBanner();
 
-        // If StoreTrainer was invoked with '/e "C:\SomeOtherFolder\Game.stf"' outside My StoreFiles,
-        // load that external '.stf' directly into the editor pane!
+        // If launched with an external '.stfx' via '/e', load it into the editor
         if (!string.IsNullOrWhiteSpace(App.StartupEditProfilePath) &&
             File.Exists(App.StartupEditProfilePath) &&
             !string.Equals(_currentProfile.FilePath, App.StartupEditProfilePath, StringComparison.OrdinalIgnoreCase))
         {
-            OpenExternalStoreFileIntoEditor(App.StartupEditProfilePath);
+            OpenExternalStoreFileOrWizard(App.StartupEditProfilePath);
+        }
+
+        // If a classic '.stf' was passed on startup (via File -> Open, double-click, or '/l'),
+        // launch the 3-step StoreFile Upgrade Wizard immediately!
+        if (!string.IsNullOrWhiteSpace(App.StartupClassicStfUpgradePath) &&
+            File.Exists(App.StartupClassicStfUpgradePath))
+        {
+            await RunUpgradeWizardAsync([App.StartupClassicStfUpgradePath]);
         }
     }
 
-    // Prompts to save if the user clicks the window's [X] close button with unsaved edits.
     private void MainWindow_OnClosing(object? sender, CancelEventArgs e)
     {
         if (!ConfirmDiscardOrSaveUnsavedChanges())
@@ -107,15 +114,36 @@ public partial class MainWindow : Window
     }
 
     // =========================================================================
-    // LIBRARY DISCOVERY, SEARCH & FILTERING
+    // LIBRARY DISCOVERY, CLASSIC '.STF' BANNER & FILTERING
     // =========================================================================
+
+    private void RefreshClassicImportBanner()
+    {
+        if (_service.HasDismissedClassicImportBanner())
+        {
+            ClassicImportBannerBorder.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var unmigrated = _service.FindUnmigratedClassicStfFiles(_libraryFolder);
+        if (unmigrated.Count > 0)
+        {
+            ClassicImportBannerText.Text =
+                $"✨ Found {unmigrated.Count} classic StoreFile profile(s) (.stf) in My StoreFiles — upgrade them to StoreTrainer 2.0 (.stfx) while keeping your originals untouched!";
+            ClassicImportBannerBorder.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            ClassicImportBannerBorder.Visibility = Visibility.Collapsed;
+        }
+    }
 
     private void ReloadLibraryList(string? selectFilePath = null)
     {
         _allProfiles = _service.LoadLibraryProfiles(_libraryFolder);
         LibrarySummaryText.Text = _allProfiles.Count == 1
-            ? "1 saved game profile in My StoreFiles • Compatible with StoreTrainer 1.0, 1.1 & 2.0"
-            : $"{_allProfiles.Count} saved game profiles in My StoreFiles • Compatible with StoreTrainer 1.0, 1.1 & 2.0";
+            ? "1 saved game profile in Documents\\StoreFiles"
+            : $"{_allProfiles.Count} saved game profiles in Documents\\StoreFiles";
 
         ApplyLibraryFilter(selectFilePath);
     }
@@ -133,6 +161,8 @@ public partial class MainWindow : Window
                 p.DisplayTitle.Contains(search, StringComparison.OrdinalIgnoreCase) ||
                 p.Category.Contains(search, StringComparison.OrdinalIgnoreCase) ||
                 p.Notes.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                p.Hotkeys.Any(h => h.Keys.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                                   h.Effect.Contains(search, StringComparison.OrdinalIgnoreCase)) ||
                 p.FileNameBadge.Contains(search, StringComparison.OrdinalIgnoreCase));
         }
 
@@ -175,7 +205,7 @@ public partial class MainWindow : Window
     }
 
     // =========================================================================
-    // TWO-WAY PROFILE <-> EDITOR FORM BINDING
+    // TWO-WAY PROFILE <-> EDITOR FORM BINDING (INCLUDING MULTI-TRAINER SLOTS)
     // =========================================================================
 
     private void BindProfileToEditor(StoreFileProfile profile, bool markDirty)
@@ -184,30 +214,38 @@ public partial class MainWindow : Window
         try
         {
             _currentProfile = profile;
+            _ = _currentProfile.GetOrCreateActiveTrainer();
 
             ProfileDisplayNameBox.Text = profile.DisplayName;
             ProfileCategoryCombo.Text = string.IsNullOrWhiteSpace(profile.Category) ? "General" : profile.Category;
             FavoriteCheckBox.IsChecked = profile.IsFavorite;
+            PlaytimeStatsText.Text = profile.PlaytimeSummaryLabel;
 
             TrainerLaunchesGameCheckBox.IsChecked = profile.TrainerLaunchesGame;
             LaunchGameFirstCheckBox.IsChecked = !profile.TrainerLaunchesGame && profile.LaunchGameFirst;
             WaitForGameReadyCheckBox.IsChecked = profile.WaitForGameReady;
-            SelectDelayComboBySeconds(profile.LaunchDelaySeconds);
+            AutoCloseTrainerCheckBox.IsChecked = profile.AutoCloseTrainerOnGameExit;
+            SelectComboByIntTag(LaunchDelayCombo, profile.LaunchDelaySeconds);
+            SelectComboByIntTag(CpuCoreLimitCombo, profile.CpuCoreLimit);
 
             GamePathBox.Text = profile.GamePath;
             GameSwitchBox.Text = profile.GameSwitch;
             GameWorkingDirBox.Text = profile.GameWorkingDirectory;
 
-            TrainerPathBox.Text = profile.TrainerPath;
-            TrainerSwitchBox.Text = profile.TrainerSwitch;
-            TrainerWorkingDirBox.Text = profile.TrainerWorkingDirectory;
-            VerifyTrainerCheckBox.IsChecked = profile.VerifyTrainerBeforeLaunch;
+            SaveFolderPathBox.Text = profile.SaveFolderPath;
+            BackupSavesBeforeLaunchCheckBox.IsChecked = profile.BackupSavesBeforeLaunch;
+
+            _boundHotkeys.Clear();
+            foreach (var hk in profile.Hotkeys)
+            {
+                _boundHotkeys.Add(hk.Clone());
+            }
 
             ProfileNotesBox.Text = profile.Notes;
 
+            RefreshTrainerSlotsComboAndBindActive();
             UpdateGameSectionEnabledState();
             UpdatePathValidationBadges();
-            UpdateTrainerFingerprintStatusLabel();
             DeleteProfileButton.IsEnabled = !profile.IsUnsavedNew;
 
             SetDirtyState(markDirty);
@@ -216,6 +254,45 @@ public partial class MainWindow : Window
         {
             _isBindingEditor = false;
         }
+    }
+
+    private void RefreshTrainerSlotsComboAndBindActive()
+    {
+        _isBindingTrainerSlot = true;
+        try
+        {
+            var active = _currentProfile.GetOrCreateActiveTrainer();
+            ActiveTrainerCombo.ItemsSource = null;
+            ActiveTrainerCombo.ItemsSource = _currentProfile.Trainers;
+            ActiveTrainerCombo.SelectedItem = active;
+            RemoveTrainerSlotButton.IsEnabled = _currentProfile.Trainers.Count > 1;
+
+            TrainerLabelBox.Text = active.Label;
+            TrainerPathBox.Text = active.Path;
+            TrainerSwitchBox.Text = active.Switch;
+            TrainerWorkingDirBox.Text = active.WorkingDirectory;
+            VerifyTrainerCheckBox.IsChecked = active.VerifyBeforeLaunch;
+            UpdateTrainerFingerprintStatusLabel(active);
+        }
+        finally
+        {
+            _isBindingTrainerSlot = false;
+        }
+    }
+
+    private void SaveCurrentTrainerFieldsIntoActiveSlot()
+    {
+        if (_isBindingTrainerSlot)
+        {
+            return;
+        }
+
+        var active = _currentProfile.GetOrCreateActiveTrainer();
+        active.Label = string.IsNullOrWhiteSpace(TrainerLabelBox.Text) ? "Primary Trainer" : TrainerLabelBox.Text.Trim();
+        active.Path = TrainerPathBox.Text.Trim();
+        active.Switch = TrainerSwitchBox.Text.Trim();
+        active.WorkingDirectory = TrainerWorkingDirBox.Text.Trim();
+        active.VerifyBeforeLaunch = VerifyTrainerCheckBox.IsChecked == true;
     }
 
     private void ReadEditorIntoCurrentProfile()
@@ -230,19 +307,27 @@ public partial class MainWindow : Window
         _currentProfile.LaunchGameFirst = !_currentProfile.TrainerLaunchesGame &&
                                           LaunchGameFirstCheckBox.IsChecked == true;
         _currentProfile.WaitForGameReady = WaitForGameReadyCheckBox.IsChecked == true;
+        _currentProfile.AutoCloseTrainerOnGameExit = AutoCloseTrainerCheckBox.IsChecked == true;
 
-        var delayTag = (LaunchDelayCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "0";
-        _ = int.TryParse(delayTag, out var delaySeconds);
+        _ = int.TryParse((LaunchDelayCombo.SelectedItem as ComboBoxItem)?.Tag as string, out var delaySeconds);
         _currentProfile.LaunchDelaySeconds = delaySeconds;
+
+        _ = int.TryParse((CpuCoreLimitCombo.SelectedItem as ComboBoxItem)?.Tag as string, out var coreLimit);
+        _currentProfile.CpuCoreLimit = coreLimit;
 
         _currentProfile.GamePath = GamePathBox.Text.Trim();
         _currentProfile.GameSwitch = GameSwitchBox.Text.Trim();
         _currentProfile.GameWorkingDirectory = GameWorkingDirBox.Text.Trim();
 
-        _currentProfile.TrainerPath = TrainerPathBox.Text.Trim();
-        _currentProfile.TrainerSwitch = TrainerSwitchBox.Text.Trim();
-        _currentProfile.TrainerWorkingDirectory = TrainerWorkingDirBox.Text.Trim();
-        _currentProfile.VerifyTrainerBeforeLaunch = VerifyTrainerCheckBox.IsChecked == true;
+        SaveCurrentTrainerFieldsIntoActiveSlot();
+
+        _currentProfile.SaveFolderPath = SaveFolderPathBox.Text.Trim();
+        _currentProfile.BackupSavesBeforeLaunch = BackupSavesBeforeLaunchCheckBox.IsChecked == true;
+
+        _currentProfile.Hotkeys = _boundHotkeys
+            .Where(h => !string.IsNullOrWhiteSpace(h.Keys) || !string.IsNullOrWhiteSpace(h.Effect))
+            .Select(h => h.Clone())
+            .ToList();
         _currentProfile.Notes = ProfileNotesBox.Text;
     }
 
@@ -254,19 +339,19 @@ public partial class MainWindow : Window
         UnsavedBadgeBorder.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void SelectDelayComboBySeconds(int seconds)
+    private static void SelectComboByIntTag(ComboBox combo, int targetValue)
     {
-        for (var i = 0; i < LaunchDelayCombo.Items.Count; i++)
+        for (var i = 0; i < combo.Items.Count; i++)
         {
-            if (LaunchDelayCombo.Items[i] is ComboBoxItem item &&
-                int.TryParse(item.Tag as string, out var itemSec) &&
-                itemSec >= seconds)
+            if (combo.Items[i] is ComboBoxItem item &&
+                int.TryParse(item.Tag as string, out var val) &&
+                val == targetValue)
             {
-                LaunchDelayCombo.SelectedIndex = i;
+                combo.SelectedIndex = i;
                 return;
             }
         }
-        LaunchDelayCombo.SelectedIndex = 0;
+        combo.SelectedIndex = 0;
     }
 
     private void UpdateGameSectionEnabledState()
@@ -278,6 +363,7 @@ public partial class MainWindow : Window
         }
 
         LaunchGameFirstCheckBox.IsEnabled = !trainerStartsGame;
+        LaunchCleanButton.IsEnabled = !trainerStartsGame;
         GamePathBox.IsEnabled = !trainerStartsGame;
         BrowseGameButton.IsEnabled = !trainerStartsGame;
         GameSwitchBox.IsEnabled = !trainerStartsGame;
@@ -304,7 +390,7 @@ public partial class MainWindow : Window
         var trainerPath = TrainerPathBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(trainerPath))
         {
-            TrainerStatusText.Text = "Optional (or choose trainer)";
+            TrainerStatusText.Text = "Optional (or choose/extract trainer)";
         }
         else
         {
@@ -312,22 +398,18 @@ public partial class MainWindow : Window
         }
     }
 
-    private void UpdateTrainerFingerprintStatusLabel()
+    private void UpdateTrainerFingerprintStatusLabel(TrainerEntry active)
     {
-        if (string.IsNullOrWhiteSpace(_currentProfile.TrainerFingerprint))
+        if (string.IsNullOrWhiteSpace(active.Fingerprint))
         {
             TrainerFingerprintStatusText.Text = "No trusted trainer snapshot recorded yet";
             return;
         }
 
-        var shortCode = _currentProfile.TrainerFingerprint.Length >= 12
-            ? _currentProfile.TrainerFingerprint[..12]
-            : _currentProfile.TrainerFingerprint;
+        var shortCode = active.Fingerprint.Length >= 12 ? active.Fingerprint[..12] : active.Fingerprint;
         TrainerFingerprintStatusText.Text = $"🛡 Trusted snapshot saved ({shortCode}…)";
     }
 
-    // Checks if the current profile has unsaved changes and asks Yes / No / Cancel.
-    // Returns true if safe to proceed, or false if the user canceled.
     private bool ConfirmDiscardOrSaveUnsavedChanges()
     {
         if (!_isDirty)
@@ -343,31 +425,24 @@ public partial class MainWindow : Window
             MessageBoxImage.Question,
             MessageBoxResult.Yes);
 
-        if (result == MessageBoxResult.Cancel)
-        {
-            return false;
-        }
-
-        if (result == MessageBoxResult.Yes)
-        {
-            return PerformSave(forceSaveAs: false);
-        }
-
+        if (result == MessageBoxResult.Cancel) return false;
+        if (result == MessageBoxResult.Yes) return PerformSave(forceSaveAs: false);
         return true;
     }
 
     // =========================================================================
-    // SAVE, SAVE AS, NEW, DUPLICATE, DELETE & LAUNCH HANDLERS
+    // SAVE, UPGRADE WIZARD, LAUNCH (WITH TRAINER / CLEAN), & DESKTOP SHORTCUT
     // =========================================================================
 
     private bool PerformSave(bool forceSaveAs)
     {
+        HotkeysDataGrid.CommitEdit(DataGridEditingUnit.Row, exitEditingMode: true);
         ReadEditorIntoCurrentProfile();
 
         var targetPath = _currentProfile.FilePath;
         if (forceSaveAs || string.IsNullOrWhiteSpace(targetPath))
         {
-            var suggestedBase = MakeSafeFileName(
+            var suggestedBase = StoreTrainerService.MakeSafeFileSlug(
                 !string.IsNullOrWhiteSpace(_currentProfile.DisplayName)
                     ? _currentProfile.DisplayName
                     : !string.IsNullOrWhiteSpace(_currentProfile.GamePath)
@@ -376,30 +451,28 @@ public partial class MainWindow : Window
 
             var dlg = new SaveFileDialog
             {
-                Title = "Save StoreFile Profile",
-                Filter = "StoreTrainer Profile (*.stf)|*.stf",
-                DefaultExt = ".stf",
+                Title = "Save StoreTrainer 2.0 Profile (.stfx)",
+                Filter = "StoreTrainer 2.0 Profile (*.stfx)|*.stfx",
+                DefaultExt = ".stfx",
                 InitialDirectory = Directory.Exists(_libraryFolder) ? _libraryFolder : string.Empty,
-                FileName = $"{suggestedBase}.stf"
+                FileName = $"{suggestedBase}.stfx"
             };
 
             if (dlg.ShowDialog(this) != true)
             {
                 return false;
             }
-
             targetPath = dlg.FileName;
         }
 
         try
         {
-            // If user checked "Warn me before launching" and a valid trainer exists without a snapshot yet,
-            // automatically capture the snapshot right as we save!
-            if (_currentProfile.VerifyTrainerBeforeLaunch &&
-                string.IsNullOrWhiteSpace(_currentProfile.TrainerFingerprint) &&
-                File.Exists(_currentProfile.TrainerPath))
+            var active = _currentProfile.GetOrCreateActiveTrainer();
+            if (active.VerifyBeforeLaunch &&
+                string.IsNullOrWhiteSpace(active.Fingerprint) &&
+                File.Exists(active.Path))
             {
-                _currentProfile.TrainerFingerprint = _service.ComputeFileFingerprint(_currentProfile.TrainerPath);
+                active.Fingerprint = _service.ComputeFileFingerprint(active.Path);
             }
 
             _service.SaveStoreFile(_currentProfile, targetPath);
@@ -410,32 +483,17 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                this,
-                $"Could not save StoreFile:\n{ex.Message}",
-                "Save Notice",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            MessageBox.Show(this, $"Could not save profile:\n{ex.Message}", "Save Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
     }
 
-    private void SaveProfileButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        PerformSave(forceSaveAs: false);
-    }
-
-    private void SaveAsProfileButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        PerformSave(forceSaveAs: true);
-    }
+    private void SaveProfileButton_OnClick(object sender, RoutedEventArgs e) => PerformSave(forceSaveAs: false);
+    private void SaveAsProfileButton_OnClick(object sender, RoutedEventArgs e) => PerformSave(forceSaveAs: true);
 
     private void NewProfileButton_OnClick(object sender, RoutedEventArgs e)
     {
-        if (!ConfirmDiscardOrSaveUnsavedChanges())
-        {
-            return;
-        }
+        if (!ConfirmDiscardOrSaveUnsavedChanges()) return;
 
         _isUpdatingSelection = true;
         ProfilesListBox.SelectedItem = null;
@@ -443,32 +501,34 @@ public partial class MainWindow : Window
 
         BindProfileToEditor(new StoreFileProfile(), markDirty: false);
         ProfileDisplayNameBox.Focus();
-        StatusBannerText.Text = "➕ Started a new game profile";
+        StatusBannerText.Text = "➕ Started a new .stfx game profile";
     }
 
     private void ImportProfileButton_OnClick(object sender, RoutedEventArgs e)
     {
-        if (!ConfirmDiscardOrSaveUnsavedChanges())
-        {
-            return;
-        }
+        if (!ConfirmDiscardOrSaveUnsavedChanges()) return;
 
         var dlg = new OpenFileDialog
         {
-            Title = "Open StoreFile Profile",
-            Filter = "StoreTrainer Profile (*.stf)|*.stf|All Files (*.*)|*.*",
-            DefaultExt = ".stf",
+            Title = "Open StoreFile Profile (.stfx or Classic .stf)",
+            Filter = "All StoreTrainer Profiles (*.stfx;*.stf)|*.stfx;*.stf|StoreTrainer 2.0 Profile (*.stfx)|*.stfx|Classic StoreTrainer 1.0/1.1 Profile (*.stf)|*.stf",
             InitialDirectory = Directory.Exists(_libraryFolder) ? _libraryFolder : string.Empty
         };
 
         if (dlg.ShowDialog(this) == true)
         {
-            OpenExternalStoreFileIntoEditor(dlg.FileName);
+            OpenExternalStoreFileOrWizard(dlg.FileName);
         }
     }
 
-    private void OpenExternalStoreFileIntoEditor(string filePath)
+    private async void OpenExternalStoreFileOrWizard(string filePath)
     {
+        if (filePath.EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
+        {
+            await RunUpgradeWizardAsync([filePath]);
+            return;
+        }
+
         var res = _service.LoadStoreFile(filePath);
         if (!res.Success || res.Profile is null)
         {
@@ -480,12 +540,54 @@ public partial class MainWindow : Window
         StatusBannerText.Text = $"📂 Opened {res.Profile.DisplayTitle}";
     }
 
-    private void DuplicateProfileButton_OnClick(object sender, RoutedEventArgs e)
+    private async void OpenUpgradeWizardBannerButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var candidates = _service.FindUnmigratedClassicStfFiles(_libraryFolder);
+        await RunUpgradeWizardAsync(candidates);
+    }
+
+    private async void OpenUpgradeWizardButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var candidates = _service.FindUnmigratedClassicStfFiles(_libraryFolder);
+        await RunUpgradeWizardAsync(candidates);
+    }
+
+    private void DismissClassicBannerButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        _service.SetDismissedClassicImportBanner(true);
+        ClassicImportBannerBorder.Visibility = Visibility.Collapsed;
+    }
+
+    private async Task RunUpgradeWizardAsync(IReadOnlyList<string> initialFiles)
     {
         if (!ConfirmDiscardOrSaveUnsavedChanges())
         {
             return;
         }
+
+        var outcome = StoreTrainerPopups.ShowStoreFileUpgradeWizardDialog(
+            this,
+            _service,
+            initialFiles,
+            _libraryFolder);
+
+        if (outcome.CreatedStfxPaths.Count > 0)
+        {
+            var firstCreated = outcome.CreatedStfxPaths[0];
+            ReloadLibraryList(selectFilePath: firstCreated);
+            RefreshClassicImportBanner();
+            StatusBannerText.Text = $"✅ Upgraded {outcome.CreatedStfxPaths.Count} classic StoreFile(s) into Documents\\StoreFiles";
+
+            if (outcome.LaunchFirstProfileImmediately)
+            {
+                await ExecuteLaunchSequenceAsync(launchWithTrainer: true);
+            }
+        }
+    }
+
+    private void DuplicateProfileButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmDiscardOrSaveUnsavedChanges()) return;
 
         ReadEditorIntoCurrentProfile();
         var copy = _currentProfile.Clone();
@@ -497,29 +599,23 @@ public partial class MainWindow : Window
         _isUpdatingSelection = false;
 
         BindProfileToEditor(copy, markDirty: true);
-        StatusBannerText.Text = "📋 Created duplicate draft — click Save to add it to your library";
+        StatusBannerText.Text = "📋 Created duplicate draft — click Save to add it to StoreFiles";
     }
 
     private void DeleteProfileButton_OnClick(object sender, RoutedEventArgs e)
     {
-        if (_currentProfile.IsUnsavedNew || !File.Exists(_currentProfile.FilePath))
-        {
-            return;
-        }
+        if (_currentProfile.IsUnsavedNew || !File.Exists(_currentProfile.FilePath)) return;
 
         var confirm = MessageBox.Show(
             this,
             $"Delete the saved profile \"{_currentProfile.DisplayTitle}\"?\n\n" +
-            "(This only removes the StoreTrainer profile shortcut; your actual game and trainer files will not be touched.)",
+            "(This only removes the .stfx profile shortcut; your actual game, save files, and trainer files are never touched.)",
             "Delete Game Profile",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question,
             MessageBoxResult.No);
 
-        if (confirm != MessageBoxResult.Yes)
-        {
-            return;
-        }
+        if (confirm != MessageBoxResult.Yes) return;
 
         try
         {
@@ -537,9 +633,19 @@ public partial class MainWindow : Window
 
     private async void LaunchNowButton_OnClick(object sender, RoutedEventArgs e)
     {
+        await ExecuteLaunchSequenceAsync(launchWithTrainer: true);
+    }
+
+    private async void LaunchCleanButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        await ExecuteLaunchSequenceAsync(launchWithTrainer: false);
+    }
+
+    private async Task ExecuteLaunchSequenceAsync(bool launchWithTrainer)
+    {
+        HotkeysDataGrid.CommitEdit(DataGridEditingUnit.Row, exitEditingMode: true);
         ReadEditorIntoCurrentProfile();
 
-        // Save automatically if already saved before, or ask to save first if brand new (matching classic StoreTrainer!).
         if (_isDirty || _currentProfile.IsUnsavedNew)
         {
             if (!PerformSave(forceSaveAs: false))
@@ -549,24 +655,40 @@ public partial class MainWindow : Window
         }
 
         LaunchNowButton.IsEnabled = false;
+        LaunchCleanButton.IsEnabled = false;
         StatusBannerText.Text = $"⏳ Launching {_currentProfile.DisplayTitle}...";
 
         try
         {
-            var result = await _service.LaunchProfileAsync(_currentProfile, prompt =>
-            {
-                var answer = MessageBox.Show(
-                    this,
-                    prompt,
-                    "Trainer File Changed — RaggieSoft StoreTrainer",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning,
-                    MessageBoxResult.No);
-                return answer == MessageBoxResult.Yes;
-            });
+            var result = await _service.LaunchProfileAsync(
+                _currentProfile,
+                launchWithTrainer: launchWithTrainer,
+                confirmFingerprintMismatch: prompt =>
+                {
+                    var answer = MessageBox.Show(
+                        this,
+                        prompt,
+                        "Trainer File Changed — RaggieSoft StoreTrainer",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning,
+                        MessageBoxResult.No);
+                    return answer == MessageBoxResult.Yes;
+                },
+                onSessionStatsUpdated: updated =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (string.Equals(updated.FilePath, _currentProfile.FilePath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            PlaytimeStatsText.Text = updated.PlaytimeSummaryLabel;
+                        }
+                        ReloadLibraryList(_currentProfile.FilePath);
+                    });
+                });
 
             if (result.Success)
             {
+                PlaytimeStatsText.Text = _currentProfile.PlaytimeSummaryLabel;
                 StatusBannerText.Text = $"🚀 {result.Message}";
             }
             else
@@ -578,12 +700,266 @@ public partial class MainWindow : Window
         finally
         {
             LaunchNowButton.IsEnabled = true;
+            UpdateGameSectionEnabledState();
         }
     }
 
+    private void CreateDesktopShortcutButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_isDirty || _currentProfile.IsUnsavedNew)
+        {
+            if (!PerformSave(forceSaveAs: false))
+            {
+                return;
+            }
+        }
+
+        var (ok, msg) = _service.CreateDesktopLaunchShortcut(_currentProfile);
+        StatusBannerText.Text = ok ? $"🔗 {msg}" : $"⚠️ {msg}";
+        MessageBox.Show(this, msg, "Desktop Game Shortcut", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+    }
+
     // =========================================================================
-    // BROWSE, TRAINER SNAPSHOT & DRAG-AND-DROP HANDLERS
+    // MULTI-TRAINER SLOTS, ZIP ARCHIVE EXTRACTOR (UAC) & .NFO VIEWER
     // =========================================================================
+
+    private void ActiveTrainerCombo_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isBindingEditor || _isBindingTrainerSlot || ActiveTrainerCombo.SelectedItem is not TrainerEntry selected)
+        {
+            return;
+        }
+
+        SaveCurrentTrainerFieldsIntoActiveSlot();
+        _currentProfile.ActiveTrainerId = selected.Id;
+
+        _isBindingTrainerSlot = true;
+        try
+        {
+            TrainerLabelBox.Text = selected.Label;
+            TrainerPathBox.Text = selected.Path;
+            TrainerSwitchBox.Text = selected.Switch;
+            TrainerWorkingDirBox.Text = selected.WorkingDirectory;
+            VerifyTrainerCheckBox.IsChecked = selected.VerifyBeforeLaunch;
+            UpdateTrainerFingerprintStatusLabel(selected);
+            UpdatePathValidationBadges();
+        }
+        finally
+        {
+            _isBindingTrainerSlot = false;
+        }
+        SetDirtyState(true);
+    }
+
+    private void AddTrainerSlotButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        SaveCurrentTrainerFieldsIntoActiveSlot();
+        var nextNum = _currentProfile.Trainers.Count + 1;
+        var slot = new TrainerEntry { Label = $"Trainer #{nextNum}" };
+        _currentProfile.Trainers.Add(slot);
+        _currentProfile.ActiveTrainerId = slot.Id;
+        RefreshTrainerSlotsComboAndBindActive();
+        UpdatePathValidationBadges();
+        SetDirtyState(true);
+        StatusBannerText.Text = $"➕ Added {slot.Label}";
+    }
+
+    private void RemoveTrainerSlotButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (_currentProfile.Trainers.Count <= 1) return;
+
+        var active = _currentProfile.GetOrCreateActiveTrainer();
+        _currentProfile.Trainers.Remove(active);
+        _currentProfile.ActiveTrainerId = _currentProfile.Trainers[0].Id;
+        RefreshTrainerSlotsComboAndBindActive();
+        UpdatePathValidationBadges();
+        SetDirtyState(true);
+    }
+
+    private void TrainerLabelBox_OnTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isBindingEditor || _isBindingTrainerSlot) return;
+        SaveCurrentTrainerFieldsIntoActiveSlot();
+        ActiveTrainerCombo.Items.Refresh();
+        SetDirtyState(true);
+    }
+
+    private async void ExtractTrainerZipButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Select Companion Trainer ZIP Archive",
+            Filter = "ZIP Archives (*.zip)|*.zip|All Files (*.*)|*.*",
+            DefaultExt = ".zip"
+        };
+
+        if (dlg.ShowDialog(this) == true)
+        {
+            await HandleTrainerZipArchiveAsync(dlg.FileName);
+        }
+    }
+
+    private async Task HandleTrainerZipArchiveAsync(string zipFilePath)
+    {
+        var inspection = _service.InspectTrainerZip(zipFilePath);
+        if (!inspection.Success)
+        {
+            MessageBox.Show(this, inspection.ErrorMessage, "Trainer ZIP Archive", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        ReadEditorIntoCurrentProfile();
+        var gameDir = !string.IsNullOrWhiteSpace(_currentProfile.GamePath)
+            ? Path.GetDirectoryName(_currentProfile.GamePath)
+            : null;
+        var slug = StoreTrainerService.MakeSafeFileSlug(
+            !string.IsNullOrWhiteSpace(_currentProfile.DisplayName)
+                ? _currentProfile.DisplayName
+                : Path.GetFileNameWithoutExtension(zipFilePath));
+        var defaultTrainersFolder = Path.Combine(_libraryFolder, "Trainers", slug);
+
+        var choice = StoreTrainerPopups.ShowTrainerZipExtractDialog(
+            this,
+            zipFilePath,
+            inspection,
+            gameDir,
+            defaultTrainersFolder);
+
+        if (choice is null)
+        {
+            return;
+        }
+
+        StatusBannerText.Text = "⏳ Extracting trainer archive...";
+        var extractRes = await _service.ExtractTrainerZipAsync(
+            zipFilePath,
+            choice.DestinationDirectory,
+            choice.SelectedExecutableEntry);
+
+        if (!extractRes.Success)
+        {
+            StatusBannerText.Text = $"⚠️ {extractRes.Message}";
+            MessageBox.Show(this, extractRes.Message, "Extract Trainer ZIP", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // Populate active trainer slot with the extracted trainer .exe and any .nfo/.diz!
+        var active = _currentProfile.GetOrCreateActiveTrainer();
+        active.Path = extractRes.ExtractedTrainerPath;
+        if (!string.IsNullOrWhiteSpace(extractRes.ExtractedNfoPath))
+        {
+            active.NfoPath = extractRes.ExtractedNfoPath;
+            var autoKeys = Cp437NfoHelper.ExtractHotkeysFromText(Cp437NfoHelper.ReadNfoText(extractRes.ExtractedNfoPath));
+            if (autoKeys.Count > 0 && _boundHotkeys.Count == 0)
+            {
+                foreach (var hk in autoKeys)
+                {
+                    _boundHotkeys.Add(hk);
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(ProfileDisplayNameBox.Text))
+        {
+            ProfileDisplayNameBox.Text = Path.GetFileNameWithoutExtension(zipFilePath);
+        }
+
+        RefreshTrainerSlotsComboAndBindActive();
+        UpdatePathValidationBadges();
+        SetDirtyState(true);
+        StatusBannerText.Text = $"📦 {extractRes.Message}";
+    }
+
+    private void ViewTrainerNfoButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var active = _currentProfile.GetOrCreateActiveTrainer();
+        var nfoPath = active.NfoPath;
+
+        if (string.IsNullOrWhiteSpace(nfoPath) || !File.Exists(nfoPath))
+        {
+            nfoPath = StoreTrainerService.FindCompanionNfoInDirectory(Path.GetDirectoryName(TrainerPathBox.Text.Trim())) ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(nfoPath) || !File.Exists(nfoPath))
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "Select Trainer Info File (.nfo, .diz, or .txt)",
+                Filter = "Trainer Info Files (*.nfo;*.diz;*.txt)|*.nfo;*.diz;*.txt|All Files (*.*)|*.*",
+                InitialDirectory = Directory.Exists(Path.GetDirectoryName(TrainerPathBox.Text.Trim()))
+                    ? Path.GetDirectoryName(TrainerPathBox.Text.Trim())!
+                    : string.Empty
+            };
+            if (dlg.ShowDialog(this) != true)
+            {
+                return;
+            }
+            nfoPath = dlg.FileName;
+            active.NfoPath = nfoPath;
+            SetDirtyState(true);
+        }
+
+        StoreTrainerPopups.ShowCp437NfoViewerDialog(this, nfoPath, importedKeys =>
+        {
+            foreach (var hk in importedKeys)
+            {
+                if (!_boundHotkeys.Any(existing => string.Equals(existing.Keys, hk.Keys, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _boundHotkeys.Add(hk);
+                }
+            }
+            SetDirtyState(true);
+        });
+    }
+
+    // =========================================================================
+    // CHEAT CARD, SAVE BACKUPS, BROWSE & DRAG-AND-DROP HANDLERS
+    // =========================================================================
+
+    private void PopOutCheatCardButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        HotkeysDataGrid.CommitEdit(DataGridEditingUnit.Row, exitEditingMode: true);
+        ReadEditorIntoCurrentProfile();
+        _ = StoreTrainerPopups.ShowHotkeyCheatCardWindow(this, _currentProfile);
+    }
+
+    private void AddHotkeyRowButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        _boundHotkeys.Add(new HotkeyItem { Keys = "Numpad 1", Effect = "Unlimited Health" });
+        SetDirtyState(true);
+    }
+
+    private void HotkeysDataGrid_OnCellEditEnding(object? sender, DataGridCellEditEndingEventArgs e)
+    {
+        if (!_isBindingEditor)
+        {
+            Dispatcher.BeginInvoke(() => SetDirtyState(true));
+        }
+    }
+
+    private void BrowseSaveFolderButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFolderDialog
+        {
+            Title = "Choose This Game's Saved-Games Folder",
+            InitialDirectory = Directory.Exists(SaveFolderPathBox.Text.Trim())
+                ? SaveFolderPathBox.Text.Trim()
+                : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+        };
+
+        if (dlg.ShowDialog(this) == true)
+        {
+            SaveFolderPathBox.Text = dlg.FolderName;
+            BackupSavesBeforeLaunchCheckBox.IsChecked = true;
+            SetDirtyState(true);
+        }
+    }
+
+    private void ManageSaveBackupsButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        ReadEditorIntoCurrentProfile();
+        StoreTrainerPopups.ShowSaveBackupsDialog(this, _service, _currentProfile);
+    }
 
     private void BrowseGameButton_OnClick(object sender, RoutedEventArgs e)
     {
@@ -605,21 +981,29 @@ public partial class MainWindow : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = "Locate Companion Trainer Program",
-            Filter = "Program Files (*.exe)|*.exe|All Files (*.*)|*.*",
+            Title = "Locate Companion Trainer Program or ZIP Archive",
+            Filter = "Trainer Program or ZIP (*.exe;*.zip)|*.exe;*.zip|All Files (*.*)|*.*",
             DefaultExt = ".exe",
             InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
         };
 
         if (dlg.ShowDialog(this) == true)
         {
-            AssignTrainerExecutable(dlg.FileName);
+            if (dlg.FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                _ = HandleTrainerZipArchiveAsync(dlg.FileName);
+            }
+            else
+            {
+                AssignTrainerExecutable(dlg.FileName);
+            }
         }
     }
 
     private void AssignGameExecutable(string exePath)
     {
         GamePathBox.Text = exePath;
+        _currentProfile.GameIconSource = _service.TryExtractExecutableIcon(exePath);
         if (string.IsNullOrWhiteSpace(ProfileDisplayNameBox.Text))
         {
             ProfileDisplayNameBox.Text = Path.GetFileNameWithoutExtension(exePath);
@@ -631,11 +1015,21 @@ public partial class MainWindow : Window
     private void AssignTrainerExecutable(string exePath)
     {
         TrainerPathBox.Text = exePath;
+        var active = _currentProfile.GetOrCreateActiveTrainer();
+        active.Path = exePath;
+
+        var siblingNfo = StoreTrainerService.FindCompanionNfoInDirectory(Path.GetDirectoryName(exePath));
+        if (!string.IsNullOrWhiteSpace(siblingNfo))
+        {
+            active.NfoPath = siblingNfo;
+        }
+
         if (VerifyTrainerCheckBox.IsChecked == true && File.Exists(exePath))
         {
-            _currentProfile.TrainerFingerprint = _service.ComputeFileFingerprint(exePath);
-            UpdateTrainerFingerprintStatusLabel();
+            active.Fingerprint = _service.ComputeFileFingerprint(exePath);
+            UpdateTrainerFingerprintStatusLabel(active);
         }
+        ActiveTrainerCombo.Items.Refresh();
         UpdatePathValidationBadges();
         SetDirtyState(true);
     }
@@ -645,37 +1039,30 @@ public partial class MainWindow : Window
         var trainerPath = TrainerPathBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(trainerPath) || !File.Exists(trainerPath))
         {
-            MessageBox.Show(
-                this,
-                "Please choose an existing trainer file first before recording a trusted snapshot.",
-                "Trainer File Needed",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            MessageBox.Show(this, "Please choose an existing trainer file first before recording a trusted snapshot.", "Trainer File Needed", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        _currentProfile.TrainerFingerprint = _service.ComputeFileFingerprint(trainerPath);
+        var active = _currentProfile.GetOrCreateActiveTrainer();
+        active.Fingerprint = _service.ComputeFileFingerprint(trainerPath);
         VerifyTrainerCheckBox.IsChecked = true;
-        UpdateTrainerFingerprintStatusLabel();
+        UpdateTrainerFingerprintStatusLabel(active);
         SetDirtyState(true);
         StatusBannerText.Text = "🛡 Recorded trusted trainer file snapshot";
     }
 
     private void VerifyTrainerCheckBox_OnChanged(object sender, RoutedEventArgs e)
     {
-        if (_isBindingEditor)
-        {
-            return;
-        }
+        if (_isBindingEditor || _isBindingTrainerSlot) return;
 
+        var active = _currentProfile.GetOrCreateActiveTrainer();
         if (VerifyTrainerCheckBox.IsChecked == true &&
-            string.IsNullOrWhiteSpace(_currentProfile.TrainerFingerprint) &&
+            string.IsNullOrWhiteSpace(active.Fingerprint) &&
             File.Exists(TrainerPathBox.Text.Trim()))
         {
-            _currentProfile.TrainerFingerprint = _service.ComputeFileFingerprint(TrainerPathBox.Text.Trim());
-            UpdateTrainerFingerprintStatusLabel();
+            active.Fingerprint = _service.ComputeFileFingerprint(TrainerPathBox.Text.Trim());
+            UpdateTrainerFingerprintStatusLabel(active);
         }
-
         SetDirtyState(true);
     }
 
@@ -687,20 +1074,23 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void Window_OnDrop(object sender, DragEventArgs e)
+    private async void Window_OnDrop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0)
-        {
-            return;
-        }
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] files || files.Length == 0) return;
 
         var first = files[0];
-        if (first.EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
+        if (first.EndsWith(".stfx", StringComparison.OrdinalIgnoreCase) ||
+            first.EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
         {
             if (ConfirmDiscardOrSaveUnsavedChanges())
             {
-                OpenExternalStoreFileIntoEditor(first);
+                OpenExternalStoreFileOrWizard(first);
             }
+            e.Handled = true;
+        }
+        else if (first.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleTrainerZipArchiveAsync(first);
             e.Handled = true;
         }
         else if (first.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
@@ -715,11 +1105,12 @@ public partial class MainWindow : Window
     {
         if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
         {
-            if (files[0].EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
+            if (files[0].EndsWith(".stfx", StringComparison.OrdinalIgnoreCase) ||
+                files[0].EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
             {
                 if (ConfirmDiscardOrSaveUnsavedChanges())
                 {
-                    OpenExternalStoreFileIntoEditor(files[0]);
+                    OpenExternalStoreFileOrWizard(files[0]);
                 }
             }
             else
@@ -731,41 +1122,47 @@ public partial class MainWindow : Window
         }
     }
 
-    private void TrainerSectionBorder_OnDrop(object sender, DragEventArgs e)
+    private async void TrainerSectionBorder_OnDrop(object sender, DragEventArgs e)
     {
         if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
         {
-            if (files[0].EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
+            var dropped = files[0];
+            if (dropped.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleTrainerZipArchiveAsync(dropped);
+            }
+            else if (dropped.EndsWith(".nfo", StringComparison.OrdinalIgnoreCase) ||
+                     dropped.EndsWith(".diz", StringComparison.OrdinalIgnoreCase))
+            {
+                _currentProfile.GetOrCreateActiveTrainer().NfoPath = dropped;
+                SetDirtyState(true);
+                ViewTrainerNfoButton_OnClick(sender, e);
+            }
+            else if (dropped.EndsWith(".stfx", StringComparison.OrdinalIgnoreCase) ||
+                     dropped.EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
             {
                 if (ConfirmDiscardOrSaveUnsavedChanges())
                 {
-                    OpenExternalStoreFileIntoEditor(files[0]);
+                    OpenExternalStoreFileOrWizard(dropped);
                 }
             }
             else
             {
-                AssignTrainerExecutable(files[0]);
-                StatusBannerText.Text = $"🎯 Set trainer program to {Path.GetFileName(files[0])}";
+                AssignTrainerExecutable(dropped);
+                StatusBannerText.Text = $"🎯 Set trainer program to {Path.GetFileName(dropped)}";
             }
             e.Handled = true;
         }
     }
 
     // =========================================================================
-    // FIELD CHANGE, FOLDER & THEME HANDLERS
+    // SELECTION, TOOLBAR, UPDATES & THEME HANDLERS
     // =========================================================================
 
     private void ProfilesListBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_isUpdatingSelection || ProfilesListBox.SelectedItem is not StoreFileProfile selected)
-        {
-            return;
-        }
-
-        if (string.Equals(selected.FilePath, _currentProfile.FilePath, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
+        if (_isUpdatingSelection || ProfilesListBox.SelectedItem is not StoreFileProfile selected) return;
+        if (string.Equals(selected.FilePath, _currentProfile.FilePath, StringComparison.OrdinalIgnoreCase)) return;
 
         if (!ConfirmDiscardOrSaveUnsavedChanges())
         {
@@ -782,27 +1179,17 @@ public partial class MainWindow : Window
 
     private void LibrarySearchBox_OnTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (IsLoaded)
-        {
-            ApplyLibraryFilter(_currentProfile.FilePath);
-        }
+        if (IsLoaded) ApplyLibraryFilter(_currentProfile.FilePath);
     }
 
     private void LibraryCategoryFilterCombo_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (IsLoaded)
-        {
-            ApplyLibraryFilter(_currentProfile.FilePath);
-        }
+        if (IsLoaded) ApplyLibraryFilter(_currentProfile.FilePath);
     }
 
     private void TrainerLaunchesGameCheckBox_OnChanged(object sender, RoutedEventArgs e)
     {
-        if (_isBindingEditor)
-        {
-            return;
-        }
-
+        if (_isBindingEditor) return;
         UpdateGameSectionEnabledState();
         UpdatePathValidationBadges();
         SetDirtyState(true);
@@ -810,61 +1197,55 @@ public partial class MainWindow : Window
 
     private void EditorField_OnChanged(object sender, RoutedEventArgs e)
     {
-        if (!_isBindingEditor)
-        {
-            SetDirtyState(true);
-        }
+        if (!_isBindingEditor) SetDirtyState(true);
     }
 
     private void EditorTextBox_OnTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (!_isBindingEditor)
-        {
-            SetDirtyState(true);
-        }
-    }
-
-    private void ProfileCategoryCombo_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_isBindingEditor)
-        {
-            SetDirtyState(true);
-        }
-    }
-
-    private void ProfileCategoryCombo_OnLostFocus(object sender, RoutedEventArgs e)
-    {
-        if (!_isBindingEditor)
-        {
-            SetDirtyState(true);
-        }
-    }
-
-    private void LaunchDelayCombo_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_isBindingEditor)
-        {
-            SetDirtyState(true);
-        }
+        if (!_isBindingEditor && !_isBindingTrainerSlot) SetDirtyState(true);
     }
 
     private void GamePathBox_OnTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (!_isBindingEditor)
-        {
-            UpdatePathValidationBadges();
-            SetDirtyState(true);
-        }
+        if (_isBindingEditor) return;
+        UpdatePathValidationBadges();
+        SetDirtyState(true);
     }
 
     private void TrainerPathBox_OnTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (!_isBindingEditor)
-        {
-            UpdatePathValidationBadges();
-            SetDirtyState(true);
-        }
+        if (_isBindingEditor || _isBindingTrainerSlot) return;
+        SaveCurrentTrainerFieldsIntoActiveSlot();
+        ActiveTrainerCombo.Items.Refresh();
+        UpdatePathValidationBadges();
+        SetDirtyState(true);
     }
+
+    private void ProfileCategoryCombo_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isBindingEditor && IsLoaded) SetDirtyState(true);
+    }
+
+    private void ProfileCategoryCombo_OnLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (!_isBindingEditor) SetDirtyState(true);
+    }
+
+    private void LaunchDelayCombo_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isBindingEditor && IsLoaded) SetDirtyState(true);
+    }
+
+    private void CpuCoreLimitCombo_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_isBindingEditor && IsLoaded) SetDirtyState(true);
+    }
+
+    private void OpenGameFolderButton_OnClick(object sender, RoutedEventArgs e) =>
+        OpenContainingFolder(GamePathBox.Text.Trim());
+
+    private void OpenTrainerFolderButton_OnClick(object sender, RoutedEventArgs e) =>
+        OpenContainingFolder(TrainerPathBox.Text.Trim());
 
     private void OpenLibraryFolderButton_OnClick(object sender, RoutedEventArgs e)
     {
@@ -874,42 +1255,52 @@ public partial class MainWindow : Window
 
     private void ChangeLibraryFolderButton_OnClick(object sender, RoutedEventArgs e)
     {
-        if (!ConfirmDiscardOrSaveUnsavedChanges())
-        {
-            return;
-        }
+        if (!ConfirmDiscardOrSaveUnsavedChanges()) return;
 
         var dlg = new OpenFolderDialog
         {
-            Title = "Choose Your My StoreFiles Library Folder",
-            InitialDirectory = Directory.Exists(_libraryFolder) ? _libraryFolder : string.Empty
+            Title = "Choose StoreFiles Library Folder",
+            InitialDirectory = Directory.Exists(_libraryFolder)
+                ? _libraryFolder
+                : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
         };
 
-        if (dlg.ShowDialog(this) == true && !string.IsNullOrWhiteSpace(dlg.FolderName))
+        if (dlg.ShowDialog(this) == true)
         {
             _libraryFolder = dlg.FolderName;
-            _service.SetLibraryFolder(_libraryFolder);
-            ActiveLibraryPathText.Text = $"📂 Library: {_libraryFolder}";
+            _service.SaveCustomLibraryFolder(_libraryFolder);
+            ActiveLibraryPathText.Text = $"📂 StoreFiles: {_libraryFolder}";
             ReloadLibraryList();
-            StatusBannerText.Text = $"📁 Switched library folder to {_libraryFolder}";
+            RefreshClassicImportBanner();
+            StatusBannerText.Text = $"📁 Switched StoreFiles folder to {_libraryFolder}";
         }
     }
 
-    private void OpenGameFolderButton_OnClick(object sender, RoutedEventArgs e)
+    private async void CheckUpdatesButton_OnClick(object sender, RoutedEventArgs e)
     {
-        var dir = Path.GetDirectoryName(GamePathBox.Text.Trim());
-        if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+        if (RaggieSoftUpdaterLauncher.TryLaunchInteractiveWizard("storetrainer"))
         {
-            OpenFolderInExplorer(dir);
+            StatusBannerText.Text = "🔄 Opened RaggieSoft Software Update Wizard";
+            return;
         }
-    }
 
-    private void OpenTrainerFolderButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        var dir = Path.GetDirectoryName(TrainerPathBox.Text.Trim());
-        if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+        // Graceful inline fallback if RaggieSoftUpdate.exe hasn't been compiled yet in local dev
+        CheckUpdatesButton.IsEnabled = false;
+        StatusBannerText.Text = "⏳ Checking for updates...";
+        try
         {
-            OpenFolderInExplorer(dir);
+            var mgr = new RaggieSoftSuiteManager(_locator);
+            var apps = await mgr.LoadSuiteAppsAsync(checkRemoteManifest: true);
+            var st = apps.FirstOrDefault(a => a.Id == "storetrainer" || a.Id == "store-trainer");
+            var msg = st is not null && st.IsUpdateAvailable
+                ? $"RaggieSoft StoreTrainer v{st.LatestVersion} is available! Open RaggieSoft Launcher to update."
+                : "You are running the latest version of RaggieSoft StoreTrainer (v2.0.0).";
+            StatusBannerText.Text = $"✅ {msg}";
+            MessageBox.Show(this, msg, "RaggieSoft Software Update", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        finally
+        {
+            CheckUpdatesButton.IsEnabled = true;
         }
     }
 
@@ -951,7 +1342,21 @@ public partial class MainWindow : Window
 
     private void AboutAndLegalButton_OnClick(object sender, RoutedEventArgs e)
     {
-        RaggieSoftWpfDialogs.ShowAboutAndLegalDialog(this, "RaggieSoft StoreTrainer 2.0", "RaggieSoft Media");
+        RaggieSoftWpfDialogs.ShowAboutAndLegalDialog(
+            this,
+            "RaggieSoft StoreTrainer",
+            "RaggieSoft Media",
+            version: "2.0.0");
+    }
+
+    private static void OpenContainingFolder(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return;
+        var dir = Directory.Exists(filePath) ? filePath : Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+        {
+            OpenFolderInExplorer(dir);
+        }
     }
 
     private static void OpenFolderInExplorer(string directoryPath)
@@ -964,16 +1369,6 @@ public partial class MainWindow : Window
                 UseShellExecute = true
             });
         }
-        catch
-        {
-            // Ignore shell launch error
-        }
-    }
-
-    private static string MakeSafeFileName(string raw)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var cleaned = new string(raw.Where(c => !invalid.Contains(c)).ToArray()).Trim();
-        return string.IsNullOrWhiteSpace(cleaned) ? "MyGame" : cleaned;
+        catch { /* ignore */ }
     }
 }

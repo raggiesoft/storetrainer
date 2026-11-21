@@ -1,615 +1,1411 @@
 // ================================================================================
 // FILE: StoreTrainerService.cs
 // PROJECT: RaggieSoft StoreTrainer 2.0 (StoreTrainer.csproj)
-// LICENSE: MIT License (Code) / CC BY-SA 4.0 (Documentation & Creative Content)
+// LICENSE: MIT License (Code) / CC BY-SA 4.0 (Documentation & Artwork)
 //
 // PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
-//   What is this file?
-//     Think of StoreTrainerService.cs as the back-end engine behind StoreTrainer 2.0.
-//     While MainWindow.xaml draws buttons and text boxes, this service handles all
-//     disk files, folder discovery, file verification, and program launching:
-//       1. Classic 'TStore.ini' & 'My StoreFiles' Compatibility:
-//          Reads and updates '%APPDATA%\RaggieSoft\StoreTrainer\TStore.ini' — the
-//          exact same configuration file created by classic VB6 StoreTrainer 1.0 & 1.1!
-//          That means when an existing StoreTrainer 1.0/1.1 user upgrades to 2.0,
-//          StoreTrainer 2.0 immediately finds their custom 'My StoreFiles' folder
-//          with zero manual re-importing.
-//       2. Zero-Dependency INI Parser & Writer:
-//          Reads and writes classic '[Section] Key=Value' '.stf' files cleanly in
-//          UTF-8/ANSI-compatible plain text, preserving any third-party or future keys.
-//       3. Smart Game & Trainer Launch Sequencer ('LaunchProfileAsync'):
-//          Fixes every classic working-directory quirk by setting each launched
-//          program's working folder to its own parent folder (or the user's custom
-//          working folder), optionally waiting for the first window to finish
-//          opening ('WaitForInputIdle'), pausing for 'LaunchDelaySeconds', and
-//          starting the companion program cleanly.
-//       4. Optional Trainer File Verification ('ComputeFileFingerprint'):
-//          Computes a cryptographic SHA-256 fingerprint of a trainer '.exe' when
-//          pinned by the user, warning before launch if the file on disk ever
-//          changes unexpectedly.
+//   What does this service class do?
+//     Think of 'StoreTrainerService' as the engine under the hood of StoreTrainer 2.0.
+//     While 'MainWindow.xaml' draws the buttons and text boxes, this class performs
+//     every file, archive, icon, backup, shortcut, and process-launching operation:
+//
+//     1. Modern '.stfx' JSON Library ('Documents\StoreFiles\*.stfx'):
+//        Reads and writes structured JSON game profiles using .NET 10's built-in
+//        'System.Text.Json' serializer, and stores app preferences in
+//        '%APPDATA%\RaggieSoft\storetrainer-preferences.json'.
+//
+//     2. Non-Destructive Classic '.stf' Reader & Upgrade Engine:
+//        Reads classic StoreTrainer 1.0 & 1.1 INI files ('My Documents\My StoreFiles\*.stf')
+//        and converts them into '.stfx' JSON files inside 'Documents\StoreFiles\'
+//        WITHOUT ever modifying or deleting your original '.stf' files!
+//
+//     3. Trainer '.ZIP' Archive Inspector & Windows UAC Elevated Extractor:
+//        Inspects '.zip' trainer downloads for '.exe' and '.nfo'/'file_id.diz' files,
+//        guards against Zip-Slip path traversal, and extracts either into
+//        'Documents\StoreFiles\Trainers\<Game>\' OR directly into the game's install
+//        folder — automatically requesting Windows UAC administrator approval
+//        ('Verb = "runas"') when a game lives inside 'C:\Program Files'!
+//
+//     4. Native Windows Game Icon Extraction ('ExtractAssociatedIconW'):
+//        Pulls the real embedded icon straight out of each game's '.exe' file so
+//        your library sidebar displays genuine game icons!
+//
+//     5. Pre-Launch Save-Game Backup & 1-Click Rollback ("Trainer Insurance"):
+//        Creates rolling '.zip' snapshots of a game's save folder before launching
+//        with a trainer, and restores any snapshot in one click.
+//
+//     6. Smart Launch Sequencer, CPU Core Limiter & Auto-Close Trainer:
+//        Supports both "Launch with Trainer" and "Launch Clean (No Trainer)",
+//        applies 1-core / 2-core CPU affinity for vintage 1990s/2000s games, tracks
+//        playtime, and automatically closes the companion trainer when the game exits!
 // ================================================================================
 
-using System.Diagnostics;           // 'Process' and 'ProcessStartInfo' for starting games & trainers.
-using System.IO;                    // 'File', 'Directory', and 'Path' operations.
-using System.Security.Cryptography; // 'SHA256' for trainer file verification fingerprints.
-using System.Text;                  // 'Encoding' and 'StringBuilder'.
-using StoreTrainer.Models;          // 'StoreFileProfile' data model.
+using System.ComponentModel;             // 'Win32Exception' (catches UAC cancel code 1223 cleanly).
+using System.Diagnostics;                // 'Process' and 'ProcessStartInfo' for launching games, trainers, and UAC helpers.
+using System.IO;                         // 'File', 'Directory', and 'Path' filesystem utilities.
+using System.IO.Compression;             // 'ZipFile' & 'ZipArchive' for trainer '.zip' extraction and save-game backups.
+using System.Reflection;                 // 'BindingFlags' for late-bound Windows 'WScript.Shell' '.lnk' shortcut creation.
+using System.Runtime.InteropServices;    // '[DllImport]' for Win32 'ExtractAssociatedIconW' and 'DestroyIcon'.
+using System.Security.Cryptography;      // 'SHA256' for trusted trainer file safety snapshots.
+using System.Text;                       // 'Encoding' and 'StringBuilder'.
+using System.Text.Json;                  // 'JsonSerializer' for '.stfx' JSON profiles and user preferences.
+using System.Windows;                    // 'Int32Rect' for WPF icon conversion.
+using System.Windows.Interop;            // 'Imaging.CreateBitmapSourceFromHIcon' for Win32 HICON -> WPF ImageSource.
+using System.Windows.Media;              // 'ImageSource' bound in the sidebar DataTemplate.
+using System.Windows.Media.Imaging;      // 'BitmapSizeOptions'.
+using StoreTrainer.Models;               // 'StoreFileProfile', 'TrainerEntry', and 'HotkeyItem'.
 
 namespace StoreTrainer.Services;
 
-/// <summary>
-/// Result record returned when loading a <c>.stf</c> profile from disk.
-/// </summary>
-public sealed record StoreFileLoadResult(bool Success, StoreFileProfile? Profile, string ErrorMessage);
+#region Result & DTO Records
 
 /// <summary>
-/// Result record returned when launching a game and trainer profile.
+/// Result returned when loading either a modern <c>.stfx</c> JSON profile or a classic <c>.stf</c> INI file.
 /// </summary>
-public sealed record StoreTrainerLaunchResult(bool Success, int ErrorCode, string Message);
+public sealed record StoreFileLoadResult(
+    bool Success,
+    StoreFileProfile? Profile,
+    bool IsClassicStfUpgradeCandidate,
+    string ErrorMessage = "");
 
 /// <summary>
-/// Manages StoreTrainer configuration (<c>TStore.ini</c>), <c>.stf</c> profile files,
-/// trainer file fingerprints, and sequenced game/trainer process launching.
+/// Summary row produced by the StoreFile Upgrade Wizard for each classic <c>.stf</c> file converted to <c>.stfx</c>.
 /// </summary>
+public sealed record StfUpgradeReportItem(
+    string SourceStfPath,
+    string OutputStfxPath,
+    string DisplayTitle,
+    bool Success,
+    IReadOnlyList<string> Notes);
+
+/// <summary>
+/// Contents discovered inside a trainer <c>.zip</c> archive before extraction.
+/// </summary>
+public sealed record TrainerZipInspection(
+    bool Success,
+    IReadOnlyList<string> ExecutableEntries,
+    IReadOnlyList<string> ReadmeAndNfoEntries,
+    int TotalFileCount,
+    string ErrorMessage = "");
+
+/// <summary>
+/// Result of extracting a trainer <c>.zip</c> archive (directly or via Windows UAC elevation).
+/// </summary>
+public sealed record TrainerZipExtractResult(
+    bool Success,
+    bool UsedElevation,
+    string DestinationDirectory,
+    string ExtractedTrainerPath,
+    string ExtractedNfoPath,
+    string Message);
+
+/// <summary>
+/// Metadata for one timestamped save-game backup <c>.zip</c> snapshot.
+/// </summary>
+public sealed record SaveBackupInfo(
+    string ZipFilePath,
+    string FileName,
+    DateTime CreatedLocalTime,
+    long SizeBytes)
+{
+    public string FriendlyLabel =>
+        $"{CreatedLocalTime:MMM d, yyyy  h:mm:ss tt}  ({FormatSize(SizeBytes)})";
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F2} MB";
+    }
+}
+
+/// <summary>
+/// Result returned after launching a profile's game and/or companion trainer.
+/// </summary>
+public sealed record StoreTrainerLaunchResult(
+    bool Success,
+    int ErrorCode,
+    string Message,
+    Task? SessionMonitorTask = null);
+
+#endregion
+
 public sealed class StoreTrainerService
 {
-    // Highest '.stf' format version understood by StoreTrainer 2.0 ('1.0' and '1.1' both load cleanly).
-    public const string CurrentSupportedStfVersion = "1.1";
+    // Shared JSON serializer settings: pretty-printed 2-space indentation and case-insensitive property matching.
+    private static readonly JsonSerializerOptions StfxJsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
+    };
+
+    // Private preferences JSON stored at '%APPDATA%\RaggieSoft\storetrainer-preferences.json'.
+    private sealed class StoreTrainerUserPreferences
+    {
+        public string LibraryFolder { get; set; } = string.Empty;
+        public string Theme { get; set; } = "System";
+        public bool DismissedClassicImportBanner { get; set; }
+    }
+
+    // Native Win32 P/Invoke declarations (called ONLY when OperatingSystem.IsWindows() is true)
+    // to pull embedded icons out of '.exe' game binaries on Windows.
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr ExtractAssociatedIconW(IntPtr hInst, StringBuilder lpIconPath, ref ushort lpiIcon);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
+
+    // =========================================================================
+    // 1. LIBRARY PATHS & USER PREFERENCES ('Documents\StoreFiles' + JSON Prefs)
+    // =========================================================================
+
+    private static string GetPreferencesFilePath()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var dir = Path.Combine(appData, "RaggieSoft");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, "storetrainer-preferences.json");
+    }
+
+    private StoreTrainerUserPreferences ReadPreferences()
+    {
+        try
+        {
+            var path = GetPreferencesFilePath();
+            if (File.Exists(path))
+            {
+                return JsonSerializer.Deserialize<StoreTrainerUserPreferences>(File.ReadAllText(path), StfxJsonOptions)
+                       ?? new StoreTrainerUserPreferences();
+            }
+        }
+        catch
+        {
+            // Return defaults if unreadable
+        }
+        return new StoreTrainerUserPreferences();
+    }
+
+    private void WritePreferences(StoreTrainerUserPreferences prefs)
+    {
+        try
+        {
+            File.WriteAllText(GetPreferencesFilePath(), JsonSerializer.Serialize(prefs, StfxJsonOptions));
+        }
+        catch
+        {
+            // Ignore write errors on read-only media
+        }
+    }
 
     /// <summary>
-    /// Path to classic StoreTrainer roaming settings directory (<c>%APPDATA%\RaggieSoft\StoreTrainer</c>).
+    /// Returns the modern default StoreTrainer 2.0 library directory: <c>Documents\StoreFiles</c>.
     /// </summary>
-    public string ClassicAppDataDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RaggieSoft", "StoreTrainer");
+    public string GetDefaultStoreFilesFolder()
+    {
+        var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        return Path.Combine(docs, "StoreFiles");
+    }
 
     /// <summary>
-    /// Path to classic <c>TStore.ini</c> inside <c>%APPDATA%\RaggieSoft\StoreTrainer\TStore.ini</c>.
+    /// Returns the classic StoreTrainer 1.0/1.1 directory (<c>Documents\My StoreFiles</c>),
+    /// honoring any custom <c>StoreFileDir</c> saved in classic <c>%APPDATA%\RaggieSoft\StoreTrainer\TStore.ini</c>.
     /// </summary>
-    public string ClassicIniFilePath => Path.Combine(ClassicAppDataDirectory, "TStore.ini");
+    public string GetClassicMyStoreFilesFolder()
+    {
+        try
+        {
+            var classicIni = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "RaggieSoft",
+                "StoreTrainer",
+                "TStore.ini");
+            if (File.Exists(classicIni))
+            {
+                var sections = ParseIniLines(File.ReadAllLines(classicIni));
+                if (TryGetIniValue(sections, "General", "StoreFileDir", out var customDir) &&
+                    !string.IsNullOrWhiteSpace(customDir) &&
+                    Directory.Exists(customDir))
+                {
+                    return customDir;
+                }
+            }
+        }
+        catch
+        {
+            // Fall back to standard My StoreFiles path
+        }
+
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "My StoreFiles");
+    }
 
     /// <summary>
-    /// Resolves (and creates if missing) the user's active <c>My StoreFiles</c> library folder,
-    /// honoring any existing custom folder saved in <c>TStore.ini</c> by StoreTrainer 1.0 or 1.1.
+    /// Ensures the active <c>StoreFiles</c> folder exists on disk and returns its path.
     /// </summary>
     public string EnsureLibraryFolder()
     {
-        Directory.CreateDirectory(ClassicAppDataDirectory);
+        var prefs = ReadPreferences();
+        var folder = !string.IsNullOrWhiteSpace(prefs.LibraryFolder)
+            ? prefs.LibraryFolder
+            : GetDefaultStoreFilesFolder();
 
-        var iniData = File.Exists(ClassicIniFilePath)
-            ? ReadIniSections(ClassicIniFilePath)
-            : new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-
-        var configuredFolder = GetIniValue(iniData, "Library", "Folder", string.Empty);
-        if (string.IsNullOrWhiteSpace(configuredFolder) ||
-            string.Equals(configuredFolder, "NO_FOLDER_CREATED", StringComparison.OrdinalIgnoreCase))
-        {
-            var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-            configuredFolder = Path.Combine(documents, "My StoreFiles");
-        }
-
-        Directory.CreateDirectory(configuredFolder);
-
-        // Keep classic TStore.ini up to date so VB6 v1.1 and v2.0 stay synchronized if both are used.
-        SetIniValue(iniData, "General", "Version", "2.0.0");
-        SetIniValue(iniData, "General", "Path", AppContext.BaseDirectory.TrimEnd('\\', '/'));
-        SetIniValue(iniData, "Library", "Folder", configuredFolder);
-        WriteIniSections(ClassicIniFilePath, iniData);
-
-        return configuredFolder;
+        Directory.CreateDirectory(folder);
+        return folder;
     }
 
-    /// <summary>
-    /// Updates the active StoreFiles library directory in <c>TStore.ini</c>.
-    /// </summary>
-    public void SetLibraryFolder(string newFolderPath)
+    public void SaveCustomLibraryFolder(string folderPath)
     {
-        if (string.IsNullOrWhiteSpace(newFolderPath))
-        {
-            return;
-        }
-
-        Directory.CreateDirectory(newFolderPath);
-        Directory.CreateDirectory(ClassicAppDataDirectory);
-
-        var iniData = File.Exists(ClassicIniFilePath)
-            ? ReadIniSections(ClassicIniFilePath)
-            : new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-
-        SetIniValue(iniData, "Library", "Folder", newFolderPath);
-        WriteIniSections(ClassicIniFilePath, iniData);
+        var prefs = ReadPreferences();
+        prefs.LibraryFolder = folderPath;
+        WritePreferences(prefs);
     }
 
-    /// <summary>
-    /// Reads or saves the user's preferred color theme (<c>System</c>, <c>Dark</c>, or <c>Light</c>)
-    /// inside <c>TStore.ini</c> under <c>[Appearance] Theme</c>.
-    /// </summary>
-    public string GetSavedThemePreference()
-    {
-        if (!File.Exists(ClassicIniFilePath))
-        {
-            return "System";
-        }
-
-        var iniData = ReadIniSections(ClassicIniFilePath);
-        return GetIniValue(iniData, "Appearance", "Theme", "System");
-    }
+    public string GetSavedThemePreference() => ReadPreferences().Theme;
 
     public void SaveThemePreference(string theme)
     {
-        Directory.CreateDirectory(ClassicAppDataDirectory);
-        var iniData = File.Exists(ClassicIniFilePath)
-            ? ReadIniSections(ClassicIniFilePath)
-            : new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-
-        SetIniValue(iniData, "Appearance", "Theme", theme);
-        WriteIniSections(ClassicIniFilePath, iniData);
+        var prefs = ReadPreferences();
+        prefs.Theme = theme;
+        WritePreferences(prefs);
     }
 
+    public bool HasDismissedClassicImportBanner() => ReadPreferences().DismissedClassicImportBanner;
+
+    public void SetDismissedClassicImportBanner(bool dismissed)
+    {
+        var prefs = ReadPreferences();
+        prefs.DismissedClassicImportBanner = dismissed;
+        WritePreferences(prefs);
+    }
+
+    // =========================================================================
+    // 2. '.STFX' JSON PROFILE LOADING, SAVING & NATIVE ICON EXTRACTION
+    // =========================================================================
+
     /// <summary>
-    /// Scans the user's library folder for all <c>*.stf</c> profiles, sorted with Favorites first
-    /// and then alphabetically by <see cref="StoreFileProfile.DisplayTitle"/>.
+    /// Loads every <c>.stfx</c> profile in <paramref name="libraryFolder"/>, sorted with
+    /// Favorites pinned at the top and alphabetical by title underneath.
     /// </summary>
     public List<StoreFileProfile> LoadLibraryProfiles(string libraryFolder)
     {
-        var list = new List<StoreFileProfile>();
+        var profiles = new List<StoreFileProfile>();
         if (string.IsNullOrWhiteSpace(libraryFolder) || !Directory.Exists(libraryFolder))
         {
-            return list;
+            return profiles;
         }
 
-        foreach (var file in Directory.EnumerateFiles(libraryFolder, "*.stf", SearchOption.TopDirectoryOnly))
+        foreach (var file in Directory.EnumerateFiles(libraryFolder, "*.stfx", SearchOption.TopDirectoryOnly))
         {
             var res = LoadStoreFile(file);
             if (res.Success && res.Profile is not null)
             {
-                list.Add(res.Profile);
+                profiles.Add(res.Profile);
             }
         }
 
-        // OrderByDescending(p => p.IsFavorite) puts 'true' (starred favorites) above 'false',
-        // and ThenBy(..., OrdinalIgnoreCase) sorts alphabetically within each group!
-        return list
+        return profiles
             .OrderByDescending(p => p.IsFavorite)
             .ThenBy(p => p.DisplayTitle, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
     /// <summary>
-    /// Loads a single <c>.stf</c> INI profile from disk, validating compatibility with
-    /// classic <c>1.0</c>, <c>1.1</c>, and <c>2.0</c> profile keys.
+    /// Reads either a modern <c>.stfx</c> JSON file or a classic <c>.stf</c> INI file.
     /// </summary>
     public StoreFileLoadResult LoadStoreFile(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
         {
-            return new StoreFileLoadResult(false, null, $"The StoreFile could not be found:\n{filePath}");
+            return new StoreFileLoadResult(false, null, false, $"Profile file not found:\n{filePath}");
+        }
+
+        // Classic '.stf' INI detection -> parse non-destructively and mark as Upgrade Wizard candidate!
+        if (filePath.EndsWith(".stf", StringComparison.OrdinalIgnoreCase))
+        {
+            return ParseClassicStfFile(filePath);
         }
 
         try
         {
-            var sections = ReadIniSections(filePath);
-            var stfVer = GetIniValue(sections, "General", "STF.Version", "1.0");
-
-            // Reject only if a future major version (e.g. 3.0) is encountered; accept both 1.0 and 1.1!
-            if (CompareDottedVersions(stfVer, "2.0") > 0)
+            var json = File.ReadAllText(filePath, Encoding.UTF8);
+            var profile = JsonSerializer.Deserialize<StoreFileProfile>(json, StfxJsonOptions);
+            if (profile is null)
             {
-                return new StoreFileLoadResult(
-                    false,
-                    null,
-                    $"This StoreFile requires a newer version of RaggieSoft StoreTrainer (file format {stfVer}).");
+                return new StoreFileLoadResult(false, null, false, "This .stfx profile appears to be empty.");
             }
 
-            var delayRaw = GetIniValue(sections, "General", "LaunchDelay", "0");
-            _ = int.TryParse(delayRaw, out var delaySec);
-            delaySec = Math.Clamp(delaySec, 0, 30);
-
-            var trainerFingerprint = GetIniValue(sections, "Trainer", "Fingerprint", string.Empty);
-            var verifyRaw = GetIniValue(
-                sections,
-                "Trainer",
-                "VerifyBeforeLaunch",
-                !string.IsNullOrWhiteSpace(trainerFingerprint) ? "true" : "false");
-
-            var trainerLaunchesGame = ParseIniBool(GetIniValue(sections, "Trainer", "TrainerLaunchesGame", "false"));
-            var launchGameFirst = !trainerLaunchesGame &&
-                                  ParseIniBool(GetIniValue(sections, "Game", "LaunchGameFirst", "false"));
-
-            // Unescape '\n' tokens back into real multi-line notes for the editor TextBox.
-            var rawNotes = GetIniValue(sections, "General", "Notes", string.Empty)
-                .Replace("\\n", Environment.NewLine, StringComparison.Ordinal);
-
-            var profile = new StoreFileProfile
-            {
-                FilePath = filePath,
-                FormatVersion = "1.1",
-                DisplayName = GetIniValue(sections, "General", "DisplayName", string.Empty),
-                Category = GetIniValue(sections, "General", "Category", "General"),
-                IsFavorite = ParseIniBool(GetIniValue(sections, "General", "Favorite", "false")),
-                LaunchDelaySeconds = delaySec,
-                WaitForGameReady = ParseIniBool(GetIniValue(sections, "General", "WaitForGameReady", "true")),
-                Notes = rawNotes,
-                TrainerLaunchesGame = trainerLaunchesGame,
-                LaunchGameFirst = launchGameFirst,
-                GamePath = GetIniValue(sections, "Game", "Path", string.Empty),
-                GameSwitch = GetIniValue(sections, "Game", "Switch", string.Empty),
-                GameWorkingDirectory = GetIniValue(sections, "Game", "WorkingDirectory", string.Empty),
-                TrainerPath = GetIniValue(sections, "Trainer", "Path", string.Empty),
-                TrainerSwitch = GetIniValue(sections, "Trainer", "Switch", string.Empty),
-                TrainerWorkingDirectory = GetIniValue(sections, "Trainer", "WorkingDirectory", string.Empty),
-                TrainerFingerprint = trainerFingerprint,
-                VerifyTrainerBeforeLaunch = ParseIniBool(verifyRaw)
-            };
-
-            RecordRecentStoreFile(filePath);
-            return new StoreFileLoadResult(true, profile, string.Empty);
+            profile.FilePath = filePath;
+            _ = profile.GetOrCreateActiveTrainer();
+            profile.GameIconSource = TryExtractExecutableIcon(profile.GamePath);
+            return new StoreFileLoadResult(true, profile, IsClassicStfUpgradeCandidate: false);
         }
         catch (Exception ex)
         {
-            return new StoreFileLoadResult(false, null, $"Could not read StoreFile:\n{ex.Message}");
+            return new StoreFileLoadResult(
+                false,
+                null,
+                false,
+                $"Could not read '{Path.GetFileName(filePath)}':\n{ex.Message}");
         }
     }
 
     /// <summary>
-    /// Writes a <see cref="StoreFileProfile"/> to disk in backward-compatible <c>.stf</c> INI format.
+    /// Writes <paramref name="profile"/> to <paramref name="targetPath"/> in clean <c>.stfx</c> JSON format.
     /// </summary>
-    public void SaveStoreFile(StoreFileProfile profile, string targetFilePath)
+    public void SaveStoreFile(StoreFileProfile profile, string targetPath)
     {
-        var dir = Path.GetDirectoryName(targetFilePath);
+        var dir = Path.GetDirectoryName(targetPath);
         if (!string.IsNullOrWhiteSpace(dir))
         {
             Directory.CreateDirectory(dir);
         }
 
-        // Enforce mutual exclusivity (if the trainer launches the game, 'LaunchGameFirst' must be false).
-        if (profile.TrainerLaunchesGame)
+        profile.SchemaVersion = "2.0";
+        _ = profile.GetOrCreateActiveTrainer();
+
+        var json = JsonSerializer.Serialize(profile, StfxJsonOptions);
+        File.WriteAllText(targetPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        profile.FilePath = targetPath;
+        profile.GameIconSource = TryExtractExecutableIcon(profile.GamePath);
+    }
+
+    /// <summary>
+    /// Extracts the native Windows icon embedded inside a game <c>.exe</c> file so the library
+    /// sidebar shows each game's real artwork! Returns <c>null</c> cleanly if unavailable.
+    /// </summary>
+    public ImageSource? TryExtractExecutableIcon(string? exePath)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath))
         {
-            profile.LaunchGameFirst = false;
+            return null;
         }
 
-        var sections = File.Exists(targetFilePath)
-            ? ReadIniSections(targetFilePath)
-            : new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        var hIcon = IntPtr.Zero;
+        try
+        {
+            var sb = new StringBuilder(exePath, 512);
+            ushort iconIndex = 0;
+            hIcon = ExtractAssociatedIconW(IntPtr.Zero, sb, ref iconIndex);
+            if (hIcon == IntPtr.Zero)
+            {
+                return null;
+            }
 
-        // Write '1.1' so classic VB6 StoreTrainer v1.1 can open this exact '.stf' file too!
-        SetIniValue(sections, "General", "STF.Version", CurrentSupportedStfVersion);
-        SetIniValue(sections, "General", "DisplayName", profile.DisplayName.Trim());
-        SetIniValue(sections, "General", "Category", string.IsNullOrWhiteSpace(profile.Category) ? "General" : profile.Category.Trim());
-        SetIniValue(sections, "General", "Favorite", profile.IsFavorite ? "true" : "false");
-        SetIniValue(sections, "General", "LaunchDelay", Math.Clamp(profile.LaunchDelaySeconds, 0, 30).ToString());
-        SetIniValue(sections, "General", "WaitForGameReady", profile.WaitForGameReady ? "true" : "false");
-
-        // Collapse multi-line notes onto a single INI line using '\n' escape tokens so classic
-        // Win32 GetPrivateProfileStringA never trips over embedded line breaks.
-        var singleLineNotes = (profile.Notes ?? string.Empty)
-            .Replace("\r\n", "\\n", StringComparison.Ordinal)
-            .Replace("\n", "\\n", StringComparison.Ordinal)
-            .Replace("\r", "\\n", StringComparison.Ordinal);
-        SetIniValue(sections, "General", "Notes", singleLineNotes);
-
-        SetIniValue(sections, "Game", "LaunchGameFirst", profile.LaunchGameFirst ? "true" : "false");
-        SetIniValue(sections, "Game", "Path", profile.GamePath.Trim());
-        SetIniValue(sections, "Game", "Switch", profile.GameSwitch.Trim());
-        SetIniValue(sections, "Game", "WorkingDirectory", profile.GameWorkingDirectory.Trim());
-
-        SetIniValue(sections, "Trainer", "TrainerLaunchesGame", profile.TrainerLaunchesGame ? "true" : "false");
-        SetIniValue(sections, "Trainer", "Path", profile.TrainerPath.Trim());
-        SetIniValue(sections, "Trainer", "Switch", profile.TrainerSwitch.Trim());
-        SetIniValue(sections, "Trainer", "WorkingDirectory", profile.TrainerWorkingDirectory.Trim());
-        SetIniValue(sections, "Trainer", "VerifyBeforeLaunch", profile.VerifyTrainerBeforeLaunch ? "true" : "false");
-        SetIniValue(sections, "Trainer", "Fingerprint", profile.TrainerFingerprint.Trim());
-
-        WriteIniSections(targetFilePath, sections);
-        profile.FilePath = targetFilePath;
-        RecordRecentStoreFile(targetFilePath);
+            var bitmap = Imaging.CreateBitmapSourceFromHIcon(
+                hIcon,
+                Int32Rect.Empty,
+                BitmapSizeOptions.FromEmptyOptions());
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (hIcon != IntPtr.Zero)
+            {
+                _ = DestroyIcon(hIcon);
+            }
+        }
     }
 
+    // =========================================================================
+    // 3. CLASSIC '.STF' (1.0 / 1.1) DISCOVERY & STOREFILE UPGRADE WIZARD ENGINE
+    // =========================================================================
+
     /// <summary>
-    /// Computes an uppercase hexadecimal fingerprint of a trainer file on disk so
-    /// StoreTrainer can alert the user if the file is ever altered unexpectedly.
+    /// Finds classic <c>.stf</c> files in <c>Documents\My StoreFiles</c> that have not yet been
+    /// imported into <paramref name="modernStoreFilesFolder"/> as <c>.stfx</c> profiles.
     /// </summary>
-    public string ComputeFileFingerprint(string executablePath)
+    public List<string> FindUnmigratedClassicStfFiles(string modernStoreFilesFolder)
     {
-        using var stream = File.OpenRead(executablePath);
-        var hashBytes = SHA256.HashData(stream);
-        return Convert.ToHexString(hashBytes);
+        var unmigrated = new List<string>();
+        var classicFolder = GetClassicMyStoreFilesFolder();
+        if (!Directory.Exists(classicFolder))
+        {
+            return unmigrated;
+        }
+
+        foreach (var stfPath in Directory.EnumerateFiles(classicFolder, "*.stf", SearchOption.TopDirectoryOnly))
+        {
+            var baseName = Path.GetFileNameWithoutExtension(stfPath);
+            var matchingStfx = Path.Combine(modernStoreFilesFolder, $"{baseName}.stfx");
+            if (!File.Exists(matchingStfx))
+            {
+                unmigrated.Add(stfPath);
+            }
+        }
+
+        return unmigrated.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>
-    /// Validates paths and optional trainer fingerprint, then launches the game and/or
-    /// companion trainer in the user's configured sequence with proper working directories.
+    /// Parses a classic VB6 StoreTrainer 1.0 or 1.1 <c>.stf</c> INI file into a modern
+    /// <see cref="StoreFileProfile"/> in memory without modifying the <c>.stf</c> file.
+    /// </summary>
+    public StoreFileLoadResult ParseClassicStfFile(string stfPath)
+    {
+        try
+        {
+            // Classic VB6 wrote Windows-1252 / ANSI; UTF-8 with fallback handles all ASCII & extended paths cleanly.
+            var lines = File.ReadAllLines(stfPath);
+            var sections = ParseIniLines(lines);
+
+            if (!TryGetIniValue(sections, "StoreFile", "STF.Version", out var stfVer) ||
+                (stfVer != "1.0" && stfVer != "1.1"))
+            {
+                return new StoreFileLoadResult(
+                    false,
+                    null,
+                    true,
+                    $"'{Path.GetFileName(stfPath)}' does not contain a valid classic [StoreFile] header.");
+            }
+
+            _ = TryGetIniValue(sections, "StoreFile", "LaunchTrainerOnly", out var launchTrainerOnlyRaw);
+            _ = TryGetIniValue(sections, "StoreFile", "LaunchGameFirst", out var launchGameFirstRaw);
+            _ = TryGetIniValue(sections, "StoreFile", "LaunchDelay", out var launchDelayRaw);
+            _ = TryGetIniValue(sections, "StoreFile", "WaitForGameReady", out var waitReadyRaw);
+
+            _ = TryGetIniValue(sections, "Game", "Path", out var gamePath);
+            _ = TryGetIniValue(sections, "Game", "Switch", out var gameSwitch);
+            _ = TryGetIniValue(sections, "Game", "WorkingDirectory", out var gameWorkDir);
+
+            _ = TryGetIniValue(sections, "Trainer", "Path", out var trainerPath);
+            _ = TryGetIniValue(sections, "Trainer", "Switch", out var trainerSwitch);
+            _ = TryGetIniValue(sections, "Trainer", "WorkingDirectory", out var trainerWorkDir);
+
+            _ = TryGetIniValue(sections, "StoreTrainer2", "DisplayName", out var displayName);
+            _ = TryGetIniValue(sections, "StoreTrainer2", "Category", out var category);
+            _ = TryGetIniValue(sections, "StoreTrainer2", "Notes", out var notes);
+
+            var trainerStartsGame = ParseClassicBool(launchTrainerOnlyRaw);
+            var launchGameFirst = !trainerStartsGame && ParseClassicBool(launchGameFirstRaw);
+            _ = int.TryParse(launchDelayRaw, out var delaySeconds);
+            var waitReady = string.IsNullOrWhiteSpace(waitReadyRaw) || ParseClassicBool(waitReadyRaw);
+
+            var inferredTitle = !string.IsNullOrWhiteSpace(displayName)
+                ? displayName.Trim()
+                : Path.GetFileNameWithoutExtension(stfPath);
+
+            var primaryTrainer = new TrainerEntry
+            {
+                Label = "Imported Classic Trainer",
+                Path = (trainerPath ?? string.Empty).Trim(),
+                Switch = (trainerSwitch ?? string.Empty).Trim(),
+                WorkingDirectory = (trainerWorkDir ?? string.Empty).Trim()
+            };
+
+            var profile = new StoreFileProfile
+            {
+                SchemaVersion = "2.0",
+                DisplayName = inferredTitle,
+                Category = string.IsNullOrWhiteSpace(category) ? "Retro & Classic PC" : category.Trim(),
+                TrainerLaunchesGame = trainerStartsGame,
+                LaunchGameFirst = launchGameFirst,
+                WaitForGameReady = waitReady,
+                LaunchDelaySeconds = Math.Clamp(delaySeconds, 0, 120),
+                GamePath = (gamePath ?? string.Empty).Trim(),
+                GameSwitch = (gameSwitch ?? string.Empty).Trim(),
+                GameWorkingDirectory = (gameWorkDir ?? string.Empty).Trim(),
+                ActiveTrainerId = primaryTrainer.Id,
+                Trainers = [primaryTrainer],
+                Notes = (notes ?? string.Empty).Replace(@"\n", Environment.NewLine)
+            };
+
+            profile.GameIconSource = TryExtractExecutableIcon(profile.GamePath);
+            return new StoreFileLoadResult(true, profile, IsClassicStfUpgradeCandidate: true);
+        }
+        catch (Exception ex)
+        {
+            return new StoreFileLoadResult(
+                false,
+                null,
+                true,
+                $"Could not read classic StoreFile '{Path.GetFileName(stfPath)}':\n{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Converts one classic <c>.stf</c> file into a new <c>.stfx</c> JSON file inside
+    /// <paramref name="destinationStoreFilesFolder"/> while leaving the original <c>.stf</c> untouched.
+    /// </summary>
+    public StfUpgradeReportItem UpgradeClassicStfToStfx(string sourceStfPath, string destinationStoreFilesFolder)
+    {
+        var notes = new List<string>();
+        var parsed = ParseClassicStfFile(sourceStfPath);
+        if (!parsed.Success || parsed.Profile is null)
+        {
+            return new StfUpgradeReportItem(
+                sourceStfPath,
+                string.Empty,
+                Path.GetFileNameWithoutExtension(sourceStfPath),
+                Success: false,
+                Notes: [parsed.ErrorMessage]);
+        }
+
+        Directory.CreateDirectory(destinationStoreFilesFolder);
+        var baseName = MakeSafeFileSlug(Path.GetFileNameWithoutExtension(sourceStfPath));
+        var destPath = Path.Combine(destinationStoreFilesFolder, $"{baseName}.stfx");
+
+        // Avoid overwriting an existing .stfx silently by appending (Imported) if needed
+        if (File.Exists(destPath))
+        {
+            var counter = 2;
+            while (File.Exists(destPath))
+            {
+                destPath = Path.Combine(destinationStoreFilesFolder, $"{baseName} ({counter}).stfx");
+                counter++;
+            }
+            notes.Add($"Saved alongside existing profile as '{Path.GetFileName(destPath)}'.");
+        }
+
+        var profile = parsed.Profile;
+        if (!profile.TrainerLaunchesGame && !string.IsNullOrWhiteSpace(profile.GamePath) && !File.Exists(profile.GamePath))
+        {
+            notes.Add($"Note: Game path '{profile.GamePath}' was not found on this PC (you can update its location anytime).");
+        }
+
+        var trainer = profile.GetOrCreateActiveTrainer();
+        if (!string.IsNullOrWhiteSpace(trainer.Path))
+        {
+            if (File.Exists(trainer.Path))
+            {
+                // Auto-discover any sibling .nfo or file_id.diz sitting next to the classic trainer!
+                var siblingNfo = FindCompanionNfoInDirectory(Path.GetDirectoryName(trainer.Path));
+                if (!string.IsNullOrWhiteSpace(siblingNfo))
+                {
+                    trainer.NfoPath = siblingNfo;
+                    var extractedKeys = Cp437NfoHelper.ExtractHotkeysFromText(Cp437NfoHelper.ReadNfoText(siblingNfo));
+                    if (extractedKeys.Count > 0)
+                    {
+                        profile.Hotkeys = extractedKeys;
+                        notes.Add($"Auto-imported {extractedKeys.Count} shortcut key(s) from '{Path.GetFileName(siblingNfo)}'!");
+                    }
+                }
+            }
+            else
+            {
+                notes.Add($"Note: Trainer path '{trainer.Path}' was not found on this PC.");
+            }
+        }
+
+        if (notes.Count == 0)
+        {
+            notes.Add("Upgraded cleanly with 0 issues (original .stf preserved untouched).");
+        }
+
+        SaveStoreFile(profile, destPath);
+        return new StfUpgradeReportItem(sourceStfPath, destPath, profile.DisplayTitle, Success: true, Notes: notes);
+    }
+
+    // =========================================================================
+    // 4. TRAINER '.ZIP' INSPECTOR & WINDOWS UAC ELEVATED EXTRACTOR
+    // =========================================================================
+
+    /// <summary>
+    /// Inspects a <c>.zip</c> trainer archive without extracting it yet, listing all <c>.exe</c>
+    /// binaries and <c>.nfo</c>/<c>.diz</c>/<c>.txt</c> documentation files inside.
+    /// </summary>
+    public TrainerZipInspection InspectTrainerZip(string zipPath)
+    {
+        if (string.IsNullOrWhiteSpace(zipPath) || !File.Exists(zipPath))
+        {
+            return new TrainerZipInspection(false, [], [], 0, "Archive file was not found on disk.");
+        }
+
+        try
+        {
+            using var archive = ZipFile.OpenRead(zipPath);
+            var exes = new List<string>();
+            var docs = new List<string>();
+            var fileCount = 0;
+
+            foreach (var entry in archive.Entries)
+            {
+                if (string.IsNullOrEmpty(entry.Name))
+                {
+                    continue; // Directory entry
+                }
+
+                fileCount++;
+                var ext = Path.GetExtension(entry.Name);
+                if (string.Equals(ext, ".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    exes.Add(entry.FullName);
+                }
+                else if (string.Equals(ext, ".nfo", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(ext, ".diz", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(ext, ".txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    docs.Add(entry.FullName);
+                }
+            }
+
+            if (exes.Count == 0)
+            {
+                return new TrainerZipInspection(
+                    false,
+                    exes,
+                    docs,
+                    fileCount,
+                    "This ZIP archive does not contain any trainer .exe program files.");
+            }
+
+            return new TrainerZipInspection(true, exes, docs, fileCount);
+        }
+        catch (Exception ex)
+        {
+            return new TrainerZipInspection(false, [], [], 0, $"Could not read ZIP archive:\n{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Extracts a trainer <c>.zip</c> archive into <paramref name="destinationDirectory"/>.
+    /// If <paramref name="destinationDirectory"/> is inside a protected location such as
+    /// <c>C:\Program Files (x86)\...</c>, automatically stages the extracted files in <c>%TEMP%</c>
+    /// and invokes an elevated copy helper (<c>Verb = "runas"</c>) so Windows displays a standard
+    /// UAC permission prompt!
+    /// </summary>
+    public async Task<TrainerZipExtractResult> ExtractTrainerZipAsync(
+        string zipPath,
+        string destinationDirectory,
+        string preferredExecutableEntry)
+    {
+        if (string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            return new TrainerZipExtractResult(false, false, "", "", "", "Please choose a destination folder.");
+        }
+
+        // First stage safely into a fresh %TEMP% directory (protecting against Zip-Slip paths!)
+        var stageDir = Path.Combine(Path.GetTempPath(), $"RaggieSoftTrainerStage_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stageDir);
+
+        try
+        {
+            ExtractZipSafelyToDirectory(zipPath, stageDir);
+
+            var usedElevation = false;
+            if (CanWriteDirectlyToDirectory(destinationDirectory))
+            {
+                CopyDirectoryContentsRecursive(stageDir, destinationDirectory);
+            }
+            else
+            {
+                if (!OperatingSystem.IsWindows())
+                {
+                    return new TrainerZipExtractResult(
+                        false,
+                        false,
+                        destinationDirectory,
+                        "",
+                        "",
+                        "Write permission was denied for the selected destination folder.");
+                }
+
+                // Trigger native Windows UAC prompt via StoreTrainer.exe --elevated-copy "<stageDir>" "<destDir>"
+                var selfExe = Environment.ProcessPath;
+                if (string.IsNullOrWhiteSpace(selfExe) || !File.Exists(selfExe))
+                {
+                    return new TrainerZipExtractResult(
+                        false,
+                        false,
+                        destinationDirectory,
+                        "",
+                        "",
+                        "Could not locate StoreTrainer executable for administrator permission prompt.");
+                }
+
+                try
+                {
+                    using var elevatedProc = Process.Start(new ProcessStartInfo
+                    {
+                        FileName = selfExe,
+                        Arguments = $"--elevated-copy \"{stageDir}\" \"{destinationDirectory}\"",
+                        Verb = "runas",
+                        UseShellExecute = true
+                    });
+
+                    if (elevatedProc is null)
+                    {
+                        return new TrainerZipExtractResult(
+                            false,
+                            true,
+                            destinationDirectory,
+                            "",
+                            "",
+                            "Windows could not start the administrator file copy helper.");
+                    }
+
+                    await elevatedProc.WaitForExitAsync();
+                    usedElevation = true;
+                    if (elevatedProc.ExitCode != 0)
+                    {
+                        return new TrainerZipExtractResult(
+                            false,
+                            true,
+                            destinationDirectory,
+                            "",
+                            "",
+                            "Could not copy trainer files into the protected game folder.");
+                    }
+                }
+                catch (Win32Exception w32) when (w32.NativeErrorCode == 1223)
+                {
+                    // Win32 error 1223 = ERROR_CANCELLED (the user clicked "No" on the Windows UAC prompt)
+                    return new TrainerZipExtractResult(
+                        false,
+                        true,
+                        destinationDirectory,
+                        "",
+                        "",
+                        "Administrator permission was declined — no files were copied into the game folder.");
+                }
+            }
+
+            // Resolve final extracted paths for the chosen trainer .exe and any companion .nfo/.diz/.txt
+            var normalizedRelExe = preferredExecutableEntry.Replace('/', Path.DirectorySeparatorChar);
+            var finalTrainerPath = Path.Combine(destinationDirectory, normalizedRelExe);
+            if (!File.Exists(finalTrainerPath))
+            {
+                finalTrainerPath = Directory
+                    .EnumerateFiles(destinationDirectory, "*.exe", SearchOption.AllDirectories)
+                    .FirstOrDefault() ?? string.Empty;
+            }
+
+            var nfoPath = FindCompanionNfoInDirectory(Path.GetDirectoryName(finalTrainerPath))
+                          ?? FindCompanionNfoInDirectory(destinationDirectory)
+                          ?? string.Empty;
+
+            return new TrainerZipExtractResult(
+                Success: true,
+                UsedElevation: usedElevation,
+                DestinationDirectory: destinationDirectory,
+                ExtractedTrainerPath: finalTrainerPath,
+                ExtractedNfoPath: nfoPath,
+                Message: usedElevation
+                    ? $"Extracted trainer into game folder (with Windows administrator permission)"
+                    : $"Extracted trainer into {destinationDirectory}");
+        }
+        catch (Exception ex)
+        {
+            return new TrainerZipExtractResult(
+                false,
+                false,
+                destinationDirectory,
+                "",
+                "",
+                $"Could not extract trainer ZIP:\n{ex.Message}");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(stageDir))
+                {
+                    Directory.Delete(stageDir, recursive: true);
+                }
+            }
+            catch
+            {
+                // Ignore temp cleanup issue
+            }
+        }
+    }
+
+    /// <summary>
+    /// Executed inside the UAC-elevated child process (<c>StoreTrainer.exe --elevated-copy "src" "dest"</c>).
+    /// Copies staged trainer files into a protected game directory and exits immediately.
+    /// </summary>
+    public static int PerformElevatedCopy(string sourceStagingDir, string targetGameDir)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(sourceStagingDir) || !Directory.Exists(sourceStagingDir) ||
+                string.IsNullOrWhiteSpace(targetGameDir))
+            {
+                return 2;
+            }
+
+            Directory.CreateDirectory(targetGameDir);
+            CopyDirectoryContentsRecursive(sourceStagingDir, targetGameDir);
+            return 0;
+        }
+        catch
+        {
+            return 1;
+        }
+    }
+
+    private static void ExtractZipSafelyToDirectory(string zipPath, string destDir)
+    {
+        var fullDestRoot = Path.GetFullPath(destDir);
+        if (!fullDestRoot.EndsWith(Path.DirectorySeparatorChar))
+        {
+            fullDestRoot += Path.DirectorySeparatorChar;
+        }
+
+        using var archive = ZipFile.OpenRead(zipPath);
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name))
+            {
+                continue;
+            }
+
+            var targetPath = Path.GetFullPath(Path.Combine(destDir, entry.FullName));
+            // Zip-Slip security check: ensure every entry stays strictly inside destDir!
+            if (!targetPath.StartsWith(fullDestRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Blocked unsafe archive entry path: {entry.FullName}");
+            }
+
+            var parent = Path.GetDirectoryName(targetPath);
+            if (!string.IsNullOrWhiteSpace(parent))
+            {
+                Directory.CreateDirectory(parent);
+            }
+            entry.ExtractToFile(targetPath, overwrite: true);
+        }
+    }
+
+    private static bool CanWriteDirectlyToDirectory(string dirPath)
+    {
+        try
+        {
+            Directory.CreateDirectory(dirPath);
+            var probeFile = Path.Combine(dirPath, $".raggiesoft_write_test_{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(probeFile, "");
+            File.Delete(probeFile);
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void CopyDirectoryContentsRecursive(string sourceDir, string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var destFile = Path.Combine(targetDir, Path.GetFileName(file));
+            File.Copy(file, destFile, overwrite: true);
+        }
+
+        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        {
+            var destSub = Path.Combine(targetDir, Path.GetFileName(subDir));
+            CopyDirectoryContentsRecursive(subDir, destSub);
+        }
+    }
+
+    public static string? FindCompanionNfoInDirectory(string? dir)
+    {
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+        {
+            return null;
+        }
+
+        // Priority 1: *.nfo -> Priority 2: file_id.diz / *.diz -> Priority 3: *readme*.txt
+        var nfo = Directory.EnumerateFiles(dir, "*.nfo", SearchOption.TopDirectoryOnly).FirstOrDefault();
+        if (nfo is not null) return nfo;
+
+        var diz = Directory.EnumerateFiles(dir, "*.diz", SearchOption.TopDirectoryOnly).FirstOrDefault();
+        if (diz is not null) return diz;
+
+        return Directory.EnumerateFiles(dir, "*.txt", SearchOption.TopDirectoryOnly)
+            .FirstOrDefault(f => Path.GetFileName(f).Contains("read", StringComparison.OrdinalIgnoreCase) ||
+                                 Path.GetFileName(f).Contains("trn", StringComparison.OrdinalIgnoreCase) ||
+                                 Path.GetFileName(f).Contains(" trainer", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // =========================================================================
+    // 5. PRE-LAUNCH SAVE-GAME BACKUP & 1-CLICK ROLLBACK ("TRAINER INSURANCE")
+    // =========================================================================
+
+    public string GetSaveBackupsDirectoryForProfile(StoreFileProfile profile)
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var slug = MakeSafeFileSlug(profile.DisplayTitle);
+        var folder = Path.Combine(localAppData, "RaggieSoft", "Cache", "StoreTrainer", "SaveBackups", slug);
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
+
+    public List<SaveBackupInfo> ListSaveGameBackups(StoreFileProfile profile)
+    {
+        var dir = GetSaveBackupsDirectoryForProfile(profile);
+        if (!Directory.Exists(dir))
+        {
+            return [];
+        }
+
+        return Directory.EnumerateFiles(dir, "SaveBackup_*.zip", SearchOption.TopDirectoryOnly)
+            .Select(path =>
+            {
+                var info = new FileInfo(path);
+                return new SaveBackupInfo(path, info.Name, info.CreationTime, info.Length);
+            })
+            .OrderByDescending(b => b.CreatedLocalTime)
+            .ToList();
+    }
+
+    public SaveBackupInfo CreateSaveGameBackup(StoreFileProfile profile)
+    {
+        if (string.IsNullOrWhiteSpace(profile.SaveFolderPath) || !Directory.Exists(profile.SaveFolderPath))
+        {
+            throw new DirectoryNotFoundException("The configured Save-Game folder was not found on disk.");
+        }
+
+        var backupsDir = GetSaveBackupsDirectoryForProfile(profile);
+        var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        var zipPath = Path.Combine(backupsDir, $"SaveBackup_{stamp}.zip");
+        if (File.Exists(zipPath))
+        {
+            File.Delete(zipPath);
+        }
+
+        ZipFile.CreateFromDirectory(profile.SaveFolderPath, zipPath, CompressionLevel.Fastest, includeBaseDirectory: false);
+
+        // Prune older snapshots beyond MaxSaveBackups
+        var maxKeep = Math.Clamp(profile.MaxSaveBackups, 1, 25);
+        var all = ListSaveGameBackups(profile);
+        foreach (var old in all.Skip(maxKeep))
+        {
+            try { File.Delete(old.ZipFilePath); } catch { /* ignore */ }
+        }
+
+        var created = new FileInfo(zipPath);
+        return new SaveBackupInfo(zipPath, created.Name, created.CreationTime, created.Length);
+    }
+
+    public void RestoreSaveGameBackup(string backupZipPath, string saveFolderPath)
+    {
+        if (!File.Exists(backupZipPath))
+        {
+            throw new FileNotFoundException("Selected backup archive was not found.", backupZipPath);
+        }
+        if (string.IsNullOrWhiteSpace(saveFolderPath))
+        {
+            throw new InvalidOperationException("Please configure the game's Save-Game folder first.");
+        }
+
+        Directory.CreateDirectory(saveFolderPath);
+        ZipFile.ExtractToDirectory(backupZipPath, saveFolderPath, overwriteFiles: true);
+    }
+
+    // =========================================================================
+    // 6. SHA-256 FINGERPRINT, DESKTOP SHORTCUT (.LNK) & SMART LAUNCH SEQUENCER
+    // =========================================================================
+
+    public string ComputeFileFingerprint(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        var hash = SHA256.HashData(stream);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Creates a one-click Desktop shortcut (<c>.lnk</c>) using the game's own icon that launches
+    /// <c>StoreTrainer.exe /l "&lt;profile.stfx&gt;"</c>.
+    /// </summary>
+    public (bool Success, string Message) CreateDesktopLaunchShortcut(StoreFileProfile profile)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return (false, "Desktop shortcuts (.lnk) can only be created on Windows.");
+        }
+
+        if (profile.IsUnsavedNew || !File.Exists(profile.FilePath))
+        {
+            return (false, "Please save this game profile first before creating a Desktop shortcut.");
+        }
+
+        var selfExe = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(selfExe) || !File.Exists(selfExe))
+        {
+            return (false, "Could not determine StoreTrainer application path.");
+        }
+
+        try
+        {
+            var desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            var shortcutPath = Path.Combine(desktopDir, $"{MakeSafeFileSlug(profile.DisplayTitle)}.lnk");
+
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType is null)
+            {
+                return (false, "Windows Shortcut Scripting Host is unavailable on this system.");
+            }
+
+            var shell = Activator.CreateInstance(shellType)!;
+            var shortcut = shellType.InvokeMember(
+                "CreateShortcut",
+                BindingFlags.InvokeMethod,
+                null,
+                shell,
+                [shortcutPath])!;
+
+            var scType = shortcut.GetType();
+            scType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, [selfExe]);
+            scType.InvokeMember("Arguments", BindingFlags.SetProperty, null, shortcut, [$"/l \"{profile.FilePath}\""]);
+            scType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, [Path.GetDirectoryName(selfExe) ?? ""]);
+            scType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, [$"Launch {profile.DisplayTitle} via RaggieSoft StoreTrainer"]);
+
+            var iconSourceExe = !string.IsNullOrWhiteSpace(profile.GamePath) && File.Exists(profile.GamePath)
+                ? profile.GamePath
+                : selfExe;
+            scType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, [$"{iconSourceExe},0"]);
+            scType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
+
+            return (true, $"Created Desktop shortcut for {profile.DisplayTitle}");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Could not create Desktop shortcut:\n{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Launches a profile's game and companion trainer (or game-only clean mode when
+    /// <paramref name="launchWithTrainer"/> is <c>false</c>), creates pre-launch save backups,
+    /// applies CPU core affinity, tracks playtime, and auto-closes the trainer when the game exits!
     /// </summary>
     public async Task<StoreTrainerLaunchResult> LaunchProfileAsync(
         StoreFileProfile profile,
-        Func<string, bool>? confirmFingerprintMismatch = null)
+        bool launchWithTrainer = true,
+        Func<string, bool>? confirmFingerprintMismatch = null,
+        Action<StoreFileProfile>? onSessionStatsUpdated = null)
     {
-        // 1. Verify Trainer exists if provided (required unless user saved a game-only profile,
-        //    though classic StoreTrainer always pairs a trainer — we allow optional blank trainer
-        //    ONLY when TrainerLaunchesGame is false AND GamePath exists, giving 2.0 users bonus
-        //    flexibility to also launch standalone games with custom launch options!).
-        var hasTrainer = !string.IsNullOrWhiteSpace(profile.TrainerPath);
-        var hasGame = !string.IsNullOrWhiteSpace(profile.GamePath);
+        var activeTrainer = profile.GetOrCreateActiveTrainer();
+        var hasTrainerConfigured = launchWithTrainer && !string.IsNullOrWhiteSpace(activeTrainer.Path);
 
-        if (profile.TrainerLaunchesGame && !hasTrainer)
+        // Validate paths before starting anything
+        if (profile.TrainerLaunchesGame && launchWithTrainer)
         {
-            return new StoreTrainerLaunchResult(
-                false,
-                2,
-                "\"Trainer Launches Game\" is checked, so please choose a trainer program file first.");
+            if (string.IsNullOrWhiteSpace(activeTrainer.Path) || !File.Exists(activeTrainer.Path))
+            {
+                return new StoreTrainerLaunchResult(false, 2, $"Trainer program was not found:\n{activeTrainer.Path}");
+            }
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(profile.GamePath) || !File.Exists(profile.GamePath))
+            {
+                return new StoreTrainerLaunchResult(false, 3, $"Game program was not found:\n{profile.GamePath}");
+            }
+
+            if (hasTrainerConfigured && !File.Exists(activeTrainer.Path))
+            {
+                return new StoreTrainerLaunchResult(false, 2, $"Companion trainer file was not found:\n{activeTrainer.Path}");
+            }
         }
 
-        if (!hasTrainer && !hasGame)
+        // Verify SHA-256 trainer snapshot if requested
+        if (hasTrainerConfigured && activeTrainer.VerifyBeforeLaunch && !string.IsNullOrWhiteSpace(activeTrainer.Fingerprint))
         {
-            return new StoreTrainerLaunchResult(
-                false,
-                2,
-                "Please choose a game file (and optional trainer file) before launching.");
-        }
-
-        if (hasTrainer && !File.Exists(profile.TrainerPath))
-        {
-            return new StoreTrainerLaunchResult(
-                false,
-                2,
-                $"The trainer file could not be found at:\n{profile.TrainerPath}");
-        }
-
-        if (!profile.TrainerLaunchesGame && hasGame && !File.Exists(profile.GamePath))
-        {
-            return new StoreTrainerLaunchResult(
-                false,
-                3,
-                $"The game file could not be found at:\n{profile.GamePath}");
-        }
-
-        if (!profile.TrainerLaunchesGame && !hasGame)
-        {
-            return new StoreTrainerLaunchResult(
-                false,
-                3,
-                "Please choose the game program file, or check \"Trainer Launches Game\" if your trainer starts the game automatically.");
-        }
-
-        // 2. Optional Trainer File Verification Check
-        if (hasTrainer && profile.VerifyTrainerBeforeLaunch && !string.IsNullOrWhiteSpace(profile.TrainerFingerprint))
-        {
-            var currentFingerprint = ComputeFileFingerprint(profile.TrainerPath);
-            if (!string.Equals(currentFingerprint, profile.TrainerFingerprint.Trim(), StringComparison.OrdinalIgnoreCase))
+            var liveHash = ComputeFileFingerprint(activeTrainer.Path);
+            if (!string.Equals(liveHash, activeTrainer.Fingerprint, StringComparison.OrdinalIgnoreCase))
             {
                 var prompt =
-                    $"The trainer file on disk has changed since you pinned its safety verification:\n\n" +
-                    $"{profile.TrainerPath}\n\n" +
+                    $"The companion trainer file '{Path.GetFileName(activeTrainer.Path)}' has changed since you saved its trusted snapshot.\n\n" +
+                    $"Saved snapshot:  {activeTrainer.Fingerprint[..Math.Min(16, activeTrainer.Fingerprint.Length)]}…\n" +
+                    $"Current file:    {liveHash[..Math.Min(16, liveHash.Length)]}…\n\n" +
                     "Do you still want to launch this trainer?";
-                var proceed = confirmFingerprintMismatch?.Invoke(prompt) ?? false;
-                if (!proceed)
+                if (confirmFingerprintMismatch is null || !confirmFingerprintMismatch(prompt))
                 {
                     return new StoreTrainerLaunchResult(false, 4, "Launch canceled because the trainer file changed.");
                 }
             }
         }
 
-        // 3. Execute launch sequence
+        // Optional Pre-Launch Save-Game Backup ("Trainer Insurance")
+        if (launchWithTrainer &&
+            profile.BackupSavesBeforeLaunch &&
+            !string.IsNullOrWhiteSpace(profile.SaveFolderPath) &&
+            Directory.Exists(profile.SaveFolderPath))
+        {
+            try
+            {
+                _ = CreateSaveGameBackup(profile);
+            }
+            catch
+            {
+                // Never block game startup if a save file is locked; continue cleanly
+            }
+        }
+
+        Process? gameProcess = null;
+        Process? trainerProcess = null;
+
         try
         {
-            var delayMs = Math.Clamp(profile.LaunchDelaySeconds, 0, 30) * 1000;
-
-            // Mode A: Trainer launches the game by itself -> start Trainer only!
-            if (profile.TrainerLaunchesGame)
+            if (profile.TrainerLaunchesGame && launchWithTrainer)
             {
-                StartProgram(profile.TrainerPath, profile.TrainerSwitch, profile.TrainerWorkingDirectory, waitForReady: false);
-                return new StoreTrainerLaunchResult(true, 0, $"Launched trainer for {profile.DisplayTitle}");
+                trainerProcess = StartExternalProgram(
+                    activeTrainer.Path,
+                    activeTrainer.Switch,
+                    activeTrainer.WorkingDirectory,
+                    cpuCoreLimit: 0);
             }
-
-            // Mode B: Game only (no trainer path entered) -> start Game with its switches!
-            if (!hasTrainer)
+            else if (!hasTrainerConfigured)
             {
-                StartProgram(profile.GamePath, profile.GameSwitch, profile.GameWorkingDirectory, waitForReady: false);
-                return new StoreTrainerLaunchResult(true, 0, $"Launched {profile.DisplayTitle}");
+                // Clean launch (No Trainer) or profile without a trainer assigned
+                gameProcess = StartExternalProgram(
+                    profile.GamePath,
+                    profile.GameSwitch,
+                    profile.GameWorkingDirectory,
+                    profile.CpuCoreLimit);
             }
-
-            // Mode C: Launch Game First -> wait for game window / delay -> launch Trainer
-            if (profile.LaunchGameFirst)
+            else if (profile.LaunchGameFirst)
             {
-                StartProgram(profile.GamePath, profile.GameSwitch, profile.GameWorkingDirectory, waitForReady: profile.WaitForGameReady);
-                if (delayMs > 0)
-                {
-                    await Task.Delay(delayMs);
-                }
-                StartProgram(profile.TrainerPath, profile.TrainerSwitch, profile.TrainerWorkingDirectory, waitForReady: false);
-                return new StoreTrainerLaunchResult(true, 0, $"Launched {profile.DisplayTitle} (game first, then trainer)");
-            }
+                gameProcess = StartExternalProgram(
+                    profile.GamePath,
+                    profile.GameSwitch,
+                    profile.GameWorkingDirectory,
+                    profile.CpuCoreLimit);
 
-            // Mode D: Default simultaneous / Trainer-then-Game launch
-            StartProgram(profile.TrainerPath, profile.TrainerSwitch, profile.TrainerWorkingDirectory, waitForReady: profile.WaitForGameReady);
-            if (delayMs > 0)
-            {
-                await Task.Delay(delayMs);
+                await WaitBetweenProgramsAsync(gameProcess, profile.WaitForGameReady, profile.LaunchDelaySeconds);
+
+                trainerProcess = StartExternalProgram(
+                    activeTrainer.Path,
+                    activeTrainer.Switch,
+                    activeTrainer.WorkingDirectory,
+                    cpuCoreLimit: 0);
             }
-            StartProgram(profile.GamePath, profile.GameSwitch, profile.GameWorkingDirectory, waitForReady: false);
-            return new StoreTrainerLaunchResult(true, 0, $"Launched {profile.DisplayTitle} and companion trainer");
+            else
+            {
+                trainerProcess = StartExternalProgram(
+                    activeTrainer.Path,
+                    activeTrainer.Switch,
+                    activeTrainer.WorkingDirectory,
+                    cpuCoreLimit: 0);
+
+                await WaitBetweenProgramsAsync(trainerProcess, profile.WaitForGameReady, profile.LaunchDelaySeconds);
+
+                gameProcess = StartExternalProgram(
+                    profile.GamePath,
+                    profile.GameSwitch,
+                    profile.GameWorkingDirectory,
+                    profile.CpuCoreLimit);
+            }
         }
         catch (Exception ex)
         {
             return new StoreTrainerLaunchResult(false, 5, $"Could not start program:\n{ex.Message}");
         }
+
+        // Update launch counter & timestamp immediately
+        var sessionStartUtc = DateTime.UtcNow;
+        profile.LaunchCount++;
+        profile.LastPlayedUtc = sessionStartUtc;
+        if (!profile.IsUnsavedNew && File.Exists(profile.FilePath))
+        {
+            try { SaveStoreFile(profile, profile.FilePath); } catch { /* ignore */ }
+        }
+
+        // Background session monitor: tracks elapsed playtime and auto-closes trainer when game exits!
+        Task? monitorTask = null;
+        if (gameProcess is not null)
+        {
+            monitorTask = MonitorGameSessionAndAutoCloseTrainerAsync(
+                profile,
+                gameProcess,
+                trainerProcess,
+                sessionStartUtc,
+                onSessionStatsUpdated);
+        }
+
+        var modeDesc = hasTrainerConfigured ? $"with {activeTrainer.Label}" : "(Game Only — No Trainer)";
+        return new StoreTrainerLaunchResult(true, 0, $"Launched {profile.DisplayTitle} {modeDesc}", monitorTask);
     }
 
-    // Starts an executable with its switches (preserving multi-flag arguments cleanly without
-    // wrapping switches inside extra quotes!) and sets WorkingDirectory to its parent folder
-    // unless a custom working folder was specified.
-    private static void StartProgram(string exePath, string switches, string customWorkingDir, bool waitForReady)
+    private static Process? StartExternalProgram(string exePath, string args, string customWorkDir, int cpuCoreLimit)
     {
-        var workingDir = !string.IsNullOrWhiteSpace(customWorkingDir) && Directory.Exists(customWorkingDir)
-            ? customWorkingDir
+        var workDir = !string.IsNullOrWhiteSpace(customWorkDir) && Directory.Exists(customWorkDir)
+            ? customWorkDir
             : Path.GetDirectoryName(exePath) ?? string.Empty;
 
         var psi = new ProcessStartInfo
         {
             FileName = exePath,
-            Arguments = switches?.Trim() ?? string.Empty,
-            WorkingDirectory = workingDir,
+            Arguments = args ?? string.Empty,
+            WorkingDirectory = workDir,
             UseShellExecute = true
         };
 
-        using var proc = Process.Start(psi);
-        if (waitForReady && proc is not null)
+        var proc = Process.Start(psi);
+        if (proc is not null && OperatingSystem.IsWindows() && cpuCoreLimit is 1 or 2)
         {
             try
             {
-                // Wait up to 4 seconds for the first program's window message loop to become ready.
-                // Wrapped in try/catch because console launchers or elevated UAC processes may not
-                // expose a GUI input loop to WaitForInputIdle.
-                proc.WaitForInputIdle(4000);
+                // Bitmask 0x1 = Core 0 only; Bitmask 0x3 = Cores 0 & 1 only (fixes classic multi-core physics/audio bugs!)
+                proc.ProcessorAffinity = cpuCoreLimit == 1 ? (IntPtr)0x1 : (IntPtr)0x3;
             }
             catch
             {
-                // Safe to proceed immediately if target has no standard Win32 GUI message loop.
+                // Ignore if process elevated via UAC and restricts handle access
             }
+        }
+        return proc;
+    }
+
+    private static async Task WaitBetweenProgramsAsync(Process? firstProcess, bool waitForInputIdle, int extraDelaySeconds)
+    {
+        if (waitForInputIdle && firstProcess is not null && OperatingSystem.IsWindows())
+        {
+            try
+            {
+                await Task.Run(() => firstProcess.WaitForInputIdle(5000));
+            }
+            catch
+            {
+                // Console / launcher stubs without a Win32 message loop throw InvalidOperationException; safe to ignore!
+            }
+        }
+
+        if (extraDelaySeconds > 0)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(Math.Clamp(extraDelaySeconds, 0, 120)));
         }
     }
 
-    // Updates '[Recent] File1..File5' inside 'TStore.ini' so recent files stay synchronized with VB6 v1.1!
-    private void RecordRecentStoreFile(string filePath)
+    private async Task MonitorGameSessionAndAutoCloseTrainerAsync(
+        StoreFileProfile profile,
+        Process gameProcess,
+        Process? trainerProcess,
+        DateTime sessionStartUtc,
+        Action<StoreFileProfile>? onSessionStatsUpdated)
     {
         try
         {
-            Directory.CreateDirectory(ClassicAppDataDirectory);
-            var iniData = File.Exists(ClassicIniFilePath)
-                ? ReadIniSections(ClassicIniFilePath)
-                : new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-
-            var recent = new List<string> { filePath };
-            for (var i = 1; i <= 5; i++)
+            using (gameProcess)
             {
-                var existing = GetIniValue(iniData, "Recent", $"File{i}", string.Empty);
-                if (!string.IsNullOrWhiteSpace(existing) &&
-                    !recent.Contains(existing, StringComparer.OrdinalIgnoreCase))
+                await gameProcess.WaitForExitAsync();
+            }
+
+            var elapsedMinutes = Math.Max(1, (int)Math.Round((DateTime.UtcNow - sessionStartUtc).TotalMinutes));
+            profile.TotalPlayMinutes += elapsedMinutes;
+            profile.LastPlayedUtc = DateTime.UtcNow;
+
+            if (!profile.IsUnsavedNew && File.Exists(profile.FilePath))
+            {
+                try { SaveStoreFile(profile, profile.FilePath); } catch { /* ignore */ }
+            }
+
+            // Auto-Close Companion Trainer when the game exits if enabled!
+            if (profile.AutoCloseTrainerOnGameExit && trainerProcess is not null)
+            {
+                using (trainerProcess)
                 {
-                    recent.Add(existing);
+                    if (!trainerProcess.HasExited)
+                    {
+                        try
+                        {
+                            if (trainerProcess.CloseMainWindow())
+                            {
+                                await Task.Delay(1800);
+                            }
+                            if (!trainerProcess.HasExited)
+                            {
+                                trainerProcess.Kill();
+                            }
+                        }
+                        catch
+                        {
+                            // Ignore if trainer was elevated or already closed by user
+                        }
+                    }
                 }
             }
 
-            for (var i = 0; i < Math.Min(5, recent.Count); i++)
-            {
-                SetIniValue(iniData, "Recent", $"File{i + 1}", recent[i]);
-            }
-
-            WriteIniSections(ClassicIniFilePath, iniData);
+            onSessionStatsUpdated?.Invoke(profile);
         }
         catch
         {
-            // Ignore non-critical MRU write issues
+            // Ignore session monitor errors
         }
     }
 
     // =========================================================================
-    // ZERO-DEPENDENCY CLASSIC WINDOWS INI READER / WRITER
+    // 7. SMALL CLASSIC INI & SAFE FILENAME HELPERS
     // =========================================================================
 
-    private static Dictionary<string, Dictionary<string, string>> ReadIniSections(string path)
+    public static string MakeSafeFileSlug(string rawName)
     {
-        var result = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-        var currentSection = "General";
-        result[currentSection] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var rawLine in File.ReadAllLines(path))
+        if (string.IsNullOrWhiteSpace(rawName))
         {
-            var line = rawLine.Trim();
-            if (line.Length == 0 || line.StartsWith(';'))
+            return "MyGame";
+        }
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string(rawName.Trim().Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray()).Trim();
+        return string.IsNullOrWhiteSpace(cleaned) ? "MyGame" : cleaned;
+    }
+
+    private static Dictionary<string, Dictionary<string, string>> ParseIniLines(IEnumerable<string> lines)
+    {
+        var map = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        var currentSection = string.Empty;
+
+        foreach (var raw in lines)
+        {
+            var trimmed = raw.Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith(';') || trimmed.StartsWith('#'))
             {
                 continue;
             }
 
-            if (line.StartsWith('[') && line.EndsWith(']') && line.Length > 2)
+            if (trimmed.StartsWith('[') && trimmed.EndsWith(']') && trimmed.Length > 2)
             {
-                currentSection = line[1..^1].Trim();
-                if (!result.ContainsKey(currentSection))
+                currentSection = trimmed[1..^1].Trim();
+                if (!map.ContainsKey(currentSection))
                 {
-                    result[currentSection] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    map[currentSection] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 }
                 continue;
             }
 
-            var eqIdx = line.IndexOf('=');
-            if (eqIdx > 0)
+            var eq = trimmed.IndexOf('=');
+            if (eq > 0 && currentSection.Length > 0)
             {
-                var key = line[..eqIdx].Trim();
-                var val = line[(eqIdx + 1)..].Trim();
-                result[currentSection][key] = val;
+                var key = trimmed[..eq].Trim();
+                var val = trimmed[(eq + 1)..].Trim();
+                map[currentSection][key] = val;
             }
         }
 
-        return result;
+        return map;
     }
 
-    private static void WriteIniSections(string path, Dictionary<string, Dictionary<string, string>> sections)
-    {
-        var sb = new StringBuilder();
-        foreach (var (sectionName, kvps) in sections)
-        {
-            if (kvps.Count == 0)
-            {
-                continue;
-            }
-
-            sb.Append('[').Append(sectionName).AppendLine("]");
-            foreach (var (key, val) in kvps)
-            {
-                sb.Append(key).Append('=').AppendLine(val ?? string.Empty);
-            }
-            sb.AppendLine();
-        }
-
-        // Write UTF-8 without BOM so classic ANSI Win32 'GetPrivateProfileStringA' in VB6 v1.1
-        // reads the '[General]' header on line 1 cleanly without seeing 3 invisible BOM bytes!
-        File.WriteAllText(path, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-    }
-
-    private static string GetIniValue(
+    private static bool TryGetIniValue(
         Dictionary<string, Dictionary<string, string>> sections,
         string section,
         string key,
-        string defaultValue)
+        out string value)
     {
-        if (sections.TryGetValue(section, out var dict) && dict.TryGetValue(key, out var val))
+        value = string.Empty;
+        if (sections.TryGetValue(section, out var kv) && kv.TryGetValue(key, out var found))
         {
-            return val;
+            value = found;
+            return true;
         }
-        return defaultValue;
+        return false;
     }
 
-    private static void SetIniValue(
-        Dictionary<string, Dictionary<string, string>> sections,
-        string section,
-        string key,
-        string value)
+    private static bool ParseClassicBool(string? raw)
     {
-        if (!sections.TryGetValue(section, out var dict))
-        {
-            dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            sections[section] = dict;
-        }
-        dict[key] = value;
-    }
-
-    private static bool ParseIniBool(string raw) =>
-        string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(raw, "yes", StringComparison.OrdinalIgnoreCase);
-
-    private static int CompareDottedVersions(string v1, string v2)
-    {
-        var p1 = v1.Split('.');
-        var p2 = v2.Split('.');
-        var len = Math.Max(p1.Length, p2.Length);
-        for (var i = 0; i < len; i++)
-        {
-            var n1 = i < p1.Length && int.TryParse(p1[i], out var a) ? a : 0;
-            var n2 = i < p2.Length && int.TryParse(p2[i], out var b) ? b : 0;
-            if (n1 != n2)
-            {
-                return n1.CompareTo(n2);
-            }
-        }
-        return 0;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var t = raw.Trim();
+        return string.Equals(t, "True", StringComparison.OrdinalIgnoreCase) ||
+               t == "1" ||
+               t == "-1"; // Classic VB6 CStr(CBool(-1)) compatibility!
     }
 }
