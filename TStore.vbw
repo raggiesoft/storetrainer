@@ -1,0 +1,10 @@
+frmMain = 44, 44, 419, 364, Z, 22, 22, 389, 334, C
+TStoreMod = 110, 110, 855, 639, 
+INIFile = 132, 132, 1001, 580, 
+DetectOSBits = 110, 110, 979, 558, 
+OSVersionInfo = 154, 154, 1023, 602, C
+Registry = 176, 176, 1045, 624, 
+SFile = 110, 110, 1023, 471, 
+SpecialFolder = 66, 66, 894, 506, 
+VersionCompare = 198, 198, 1067, 646, 
+wHwnd = 220, 220, 1089, 668, 

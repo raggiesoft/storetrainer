@@ -1,0 +1,116 @@
+Document Type: WSE
+item: Global
+  Version=9.02
+  Flags=00000100
+  Languages=65 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Copy Default=1
+  Japanese Font Name=MS Gothic
+  Japanese Font Size=9
+  Start Gradient=0 0 255
+  End Gradient=0 0 0
+  Windows Flags=00000100000000000010110000001010
+  Message Font=MS Sans Serif
+  Font Size=8
+  Pages Modified=00001000011000000000000000000000
+  Extra Pages=00000000000000000000000000010000
+  Disk Label=Default
+  Disk Filename=SETUP
+  Patch Flags=0000000000000001
+  Patch Threshold=85
+  Patch Memory=4000
+  MIF PDF Version=1.0
+  MIF SMS Version=2.0
+  FTP Cluster Size=20
+  Per-User Version ID=1
+  Dialogs Version=7
+  Crystal Format=10111100101100000010001001001001
+  Variable Name1=_INIT_WINDOW_
+  Variable Default1=HIDE
+  Variable Flags1=00001000
+  Variable Name2=_SYS_
+  Variable Default2=C:\WINNT\system32
+  Variable Flags2=00001000
+  Variable Name3=_WIN_
+  Variable Default3=C:\WINNT
+  Variable Flags3=00001000
+  Variable Name4=_WISE_
+  Variable Default4=C:\Program Files\Wise Installation System
+  Variable Flags4=00001000
+end
+item: Set Variable
+  Variable=APPTITLE
+  Value=RaggieSoft StoreTrainer Express
+end
+item: Wizard Block
+  Direction Variable=DIRECTION
+  Display Variable=DISPLAY
+  X Position=0
+  Y Position=0
+  Filler Color=0
+end
+item: Custom Dialog Set
+  Name=%APPTITLE%
+  Display Variable=DISPLAY
+  item: Dialog
+    Title=%APPTITLE%
+    Width=290
+    Height=238
+    Font Name=Helv
+    Font Size=8
+    item: Static
+      Rectangle=0 199 284 200
+      Action=3
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000000111
+    end
+    item: Static
+      Rectangle=73 8 276 39
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000000000
+      Flags=0000000000000001
+      Name=Arial
+      Font Style=-21 0 0 0 700 255 0 0 0 3 2 1 34
+      Text=Welcome to %APPTITLE%!
+    end
+    item: Static
+      Rectangle=73 46 275 151
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000000000
+      Text=This wizard will guide you through the process of quickly creating a StoreFile, and optionally launching it.
+      Text=
+      Text=If StoreTrainer is detected on this system, you can optionally save your StoreFile to the StoreFile Library before launching.
+    end
+    item: Push Button
+      Control Name=cmdNext
+      Rectangle=248 202 283 217
+      Variable=DIRECTION
+      Value=N
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000001
+      Text=&Next >>
+    end
+    item: Push Button
+      Control Name=cmdBack
+      Rectangle=211 202 246 217
+      Variable=DIRECTION
+      Value=B
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000000
+      Text=<< &Back
+    end
+    item: Push Button
+      Control Name=cmdCancel
+      Rectangle=5 202 40 217
+      Action=3
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000000
+      Text=E&xit
+    end
+    item: Set Control Attribute
+      Control Name=cmdBack
+      Operation=1
+    end
+  end
+end
+item: End Block
+end

@@ -1,0 +1,231 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<UpgradeLog>
+    <Settings>
+        <Setting
+            Name = "LogFile"
+            Value = "TStore.log"
+        />
+        <Setting
+            Name = "GenerateInterfacesForClasses"
+            Value = "FALSE"
+        />
+        <Setting
+            Name = "ProjectName"
+            Value = "TStore"
+        />
+        <Setting
+            Name = "OutputName"
+            Value = "TStore.vbproj"
+        />
+        <Setting
+            Name = "OutputDir"
+            Value = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET"
+        />
+        <Setting
+            Name = "ProjectPath"
+            Value = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.vbp"
+        />
+        <Setting
+            Name = "MigrateProjectTo"
+            Value = "0"
+        />
+    </Settings>
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\frmMain.frm"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\frmMain.vb"
+        FileType = "Form"
+        Upgraded = "True"
+    >
+        <Section Name = "Form_QueryUnload" >
+            <Issue
+                Type = "Runtime"
+                Number = "2065"
+                ObjectName = "frmMain"
+                ObjectType = "Form"
+                PME = "QueryUnload"
+            >Form event frmMain.QueryUnload has a new behavior.</Issue>
+        </Section>
+        <Section Name = "chkLaunchGameFirst_Click" >
+            <Issue
+                Type = "Runtime"
+                Number = "2075"
+            >Event chkLaunchGameFirst.CheckStateChanged may fire when form is initialized.</Issue>
+        </Section>
+        <Section Name = "chkTrainerLaunchesGame_Click" >
+            <Issue
+                Type = "Runtime"
+                Number = "2075"
+            >Event chkTrainerLaunchesGame.CheckStateChanged may fire when form is initialized.</Issue>
+        </Section>
+        <Section Name = "txtGamePath_Change" >
+            <Issue
+                Type = "Runtime"
+                Number = "2075"
+            >Event txtGamePath.TextChanged may fire when form is initialized.</Issue>
+        </Section>
+        <Section Name = "txtGameSwitch_Change" >
+            <Issue
+                Type = "Runtime"
+                Number = "2075"
+            >Event txtGameSwitch.TextChanged may fire when form is initialized.</Issue>
+        </Section>
+        <Section Name = "txtTrainerPath_Change" >
+            <Issue
+                Type = "Runtime"
+                Number = "2075"
+            >Event txtTrainerPath.TextChanged may fire when form is initialized.</Issue>
+        </Section>
+        <Section Name = "txtTrainerSwitch_Change" >
+            <Issue
+                Type = "Runtime"
+                Number = "2075"
+            >Event txtTrainerSwitch.TextChanged may fire when form is initialized.</Issue>
+        </Section>
+    </File>
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.bas"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\TStore.vb"
+        FileType = "Module"
+        Upgraded = "True"
+    >
+        <Section Name = "(Declarations)" >
+            <Issue
+                Type = "Runtime"
+                Number = "1047"
+            >Application will terminate when Sub Main() finishes.</Issue>
+        </Section>
+        <Section Name = "AboutStoreTrainer" >
+            <Issue
+                Type = "Compile"
+                Number = "2069"
+                ObjectName = "App"
+                ObjectType = "App"
+                PME = "Revision"
+            >App property App.Revision was not upgraded.</Issue>
+        </Section>
+        <Section Name = "CreateStoreTrainerData" >
+            <Issue
+                Type = "Compile"
+                Number = "2069"
+                ObjectName = "App"
+                ObjectType = "App"
+                PME = "Revision"
+            >App property App.Revision was not upgraded.</Issue>
+        </Section>
+    </File>
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\INIFile.bas"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\INIFile.vb"
+        FileType = "Module"
+        Upgraded = "True"
+    >
+        <Section Name = "GetPrivateProfileString" >
+            <Issue
+                Type = "Compile"
+                Number = "1016"
+            >Declaring a parameter 'As Any' is not supported.</Issue>
+        </Section>
+        <Section Name = "WritePrivateProfileString" >
+            <Issue
+                Type = "Compile"
+                Number = "1016"
+            >Declaring a parameter 'As Any' is not supported.</Issue>
+        </Section>
+    </File>
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\DetectOSBits.bas"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\DetectOSBits.vb"
+        FileType = "Module"
+        Upgraded = "True"
+    >
+        <Section Name = "(Layout)" >
+            <Issue
+                Type = "Design"
+                Number = "4005"
+            >DetectOSBits is a Visual Basic 5.0 file.  For best results, upgrade the Module to Visual Basic 6.0 before upgrading it to Visual Basic .NET</Issue>
+        </Section>
+    </File>
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\OSVersionInfo.bas"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\OSVersionInfo.vb"
+        FileType = "Module"
+        Upgraded = "True"
+    >
+        <Section Name = "GetVersionEx" >
+            <Issue
+                Type = "Runtime"
+                Number = "1050"
+            >Structure OSVERSIONINFO may require marshalling attributes to be passed as an argument in this Declare statement.</Issue>
+        </Section>
+        <Section Name = "GetWinVer" >
+            <Issue
+                Type = "Runtime"
+                Number = "206"
+            >Untranslated statement in GetWinVer. Please check source code.</Issue>
+        </Section>
+        <Section Name = "GetWindowsVersion" >
+            <Issue
+                Type = "Runtime"
+                Number = "206"
+            >Untranslated statement in GetWindowsVersion. Please check source code.</Issue>
+        </Section>
+    </File>
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\Registry.bas"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\Registry.vb"
+        FileType = "Module"
+        Upgraded = "True"
+    >
+        <Section Name = "RegCreateKeyEx" >
+            <Issue
+                Type = "Runtime"
+                Number = "1050"
+            >Structure SECURITY_ATTRIBUTES may require marshalling attributes to be passed as an argument in this Declare statement.</Issue>
+        </Section>
+        <Section Name = "RegSetValueEx" >
+            <Issue
+                Type = "Compile"
+                Number = "1016"
+            >Declaring a parameter 'As Any' is not supported.</Issue>
+        </Section>
+    </File>
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\SFile.bas"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\SFile.vb"
+        FileType = "Module"
+        Upgraded = "True"
+    />
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\SpecialFolder.bas"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\SpecialFolder.vb"
+        FileType = "Module"
+        Upgraded = "True"
+    >
+        <Section Name = "SHGetSpecialFolderLocation" >
+            <Issue
+                Type = "Runtime"
+                Number = "1050"
+            >Structure ITEMIDLIST may require marshalling attributes to be passed as an argument in this Declare statement.</Issue>
+        </Section>
+    </File>
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\VersionCompare.bas"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\VersionCompare.vb"
+        FileType = "Module"
+        Upgraded = "True"
+    />
+    <File
+        OldPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\wHwnd.bas"
+        NewPath = "Z:\Documents\Visual Basic 6.0 Projects\StoreTrainer\TStore.NET\wHwnd.vb"
+        FileType = "Module"
+        Upgraded = "True"
+    >
+        <Section Name = "(Layout)" >
+            <Issue
+                Type = "Design"
+                Number = "4005"
+            >wHwnd is a Visual Basic 5.0 file.  For best results, upgrade the Module to Visual Basic 6.0 before upgrading it to Visual Basic .NET</Issue>
+        </Section>
+    </File>
+</UpgradeLog>
+
