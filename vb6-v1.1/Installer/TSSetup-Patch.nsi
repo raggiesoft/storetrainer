@@ -36,7 +36,6 @@ Var TStoreVersionInstalled
 Var TStoreVersionPatch
 Var TSVerCompare
 Var TSTOREVER
-Var SRCCODE
 Var UNINSREG
 Var hMutexCheck
 
@@ -126,33 +125,12 @@ Section "$CompanyName $ProductName" TStoreBase
   WriteRegStr HKCR "RaggieSoft.StoreFile\shell\open\command" "" "$\"$INSTDIR\TStore.exe$\" /l $\"%1$\""
   WriteRegStr HKCR "RaggieSoft.StoreFile\shell\edit" "" "Edit in RaggieSoft StoreTrainer"
   WriteRegStr HKCR "RaggieSoft.StoreFile\shell\edit\command" "" "$\"$INSTDIR\TStore.exe$\" /e $\"%1$\""
-SectionEnd
 
-Section "Source Code" Src
-  ; Only refresh Source\ if the user opted to install Source\ during their original installation (or update it cleanly)
-  IfFileExists "$INSTDIR\Source\*.*" 0 SkipSourcePatch
-    DetailPrint "Updating installed Visual Basic 6.0 Source Code..."
-    StrCpy $SRCCODE "$INSTDIR\Source"
-    SetOutPath "$SRCCODE"
-    File "..\DetectOSBits.bas"
-    File "..\frmMain.frm"
-    File "..\frmMain.frx"
-    File "..\INIFile.bas"
-    File "..\OSVersionInfo.bas"
-    File "..\README.txt"
-    File "..\README-dev.txt"
-    File "..\Registry.bas"
-    File "..\SFile.bas"
-    File "..\SpecialFolder.bas"
-    File "..\TStore.bas"
-    File "..\TStore.vbp"
-    File "..\VersionCompare.bas"
-    File "..\wHwnd.bas"
-    CreateDirectory "$SRCCODE\Installer"
-    SetOutPath "$SRCCODE\Installer"
-    File "TSSetup.nsi"
-    File "TSSetup-Patch.nsi"
-  SkipSourcePatch:
+  ; If upgrading from v1.0 where '$INSTDIR\Source' was installed locally, remove the retired
+  ; v1.0 Source folder so old 1.0 files don't sit beside a patched 1.1 binary (full source now
+  ; lives permanently on GitHub at https://github.com/raggiesoft/storetrainer).
+  IfFileExists "$INSTDIR\Source\*.*" 0 +2
+    RMDir /r "$INSTDIR\Source"
 SectionEnd
 
 Section "-Uninstall Registry Keys" Unins

@@ -43,7 +43,6 @@ Var SCRRUNVER
 Var SCRRUNDLL
 Var scr_exit_code
 Var TSTOREVER
-Var SRCCODE
 Var UNINSREG
 Var IS_INSTALLED
 Var TSTORESETUP
@@ -91,7 +90,6 @@ VIAddVersionKey "FileVersion" "${Expv_1}.${Expv_2}.${Expv_3}.${Expv_4}"
   !define MUI_LICENSEPAGE_RADIOBUTTONS_TEXT_ACCEPT "I &Accept"
   !define MUI_LICENSEPAGE_RADIOBUTTONS_TEXT_DECLINE "I &Decline"
 !insertmacro MUI_PAGE_LICENSE "License\LICENSE.rtf"
-!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
   !define MUI_FINISHPAGE_RUN "$INSTDIR\TStore.exe"
@@ -194,37 +192,9 @@ Section "$CompanyName $ProductName" TStoreBase
 SectionEnd
 
 ; ==============================================================================
-; SECTION 3: Optional Bundled VB6 Source Code
-; ==============================================================================
-Section "Source Code (Visual Basic 6.0)" Src
-  DetailPrint "Installing Visual Basic 6.0 Source Code..."
-  StrCpy $SRCCODE "$INSTDIR\Source"
-  CreateDirectory "$SRCCODE"
-  SetOutPath "$SRCCODE"
-
-  File "..\DetectOSBits.bas"
-  File "..\frmMain.frm"
-  File "..\frmMain.frx"
-  File "..\INIFile.bas"
-  File "..\OSVersionInfo.bas"
-  File "..\README.txt"
-  File "..\README-dev.txt"
-  File "..\Registry.bas"
-  File "..\SFile.bas"
-  File "..\SpecialFolder.bas"
-  File "..\TStore.bas"
-  File "..\TStore.vbp"
-  File "..\VersionCompare.bas"
-  File "..\wHwnd.bas"
-  CreateDirectory "$SRCCODE\Installer"
-  CreateDirectory "$SRCCODE\Build"
-  SetOutPath "$SRCCODE\Installer"
-  File "TSSetup.nsi"
-  File "TSSetup-Patch.nsi"
-SectionEnd
-
-; ==============================================================================
-; SECTION 4: Windows Uninstall & RaggieSoft Launcher Discovery Keys
+; SECTION 3: Windows Uninstall & RaggieSoft Launcher Discovery Keys
+;   (Note: Bundled VB6 source code was retired in v1.1 since the complete
+;    multi-generation source archive is published at github.com/raggiesoft/storetrainer.)
 ; ==============================================================================
 Section "-Uninstall Registry Keys" Unins
   DetailPrint "Registering Uninstaller & RaggieSoft Launcher Metadata..."
@@ -253,13 +223,6 @@ Section "-Cleanup" Cleanup
   Delete "$TEMP\WScr9x.exe"
   Delete "$TEMP\WScrNT2k.exe"
 SectionEnd
-
-LangString DESC_TStoreBase ${LANG_ENGLISH} "$ProductName stores and launches your PC games and companion trainers."
-LangString DESC_Src ${LANG_ENGLISH} "Visual Basic 6.0 source code and NSIS installer scripts for $ProductName."
-!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${TStoreBase} $(DESC_TStoreBase)
-  !insertmacro MUI_DESCRIPTION_TEXT ${Src} $(DESC_Src)
-!insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ==============================================================================
 ; UNINSTALL SECTION (Leaves shared VB6 system DLLs & user My StoreFiles safe!)
