@@ -1,0 +1,33 @@
+<!--
+================================================================================
+FILE: Directory.Build.targets
+SOLUTION: StoreTrainer.slnx (RaggieSoft StoreTrainer 2.0 Standalone Repo)
+LICENSE: MIT License
+================================================================================
+PLAIN-ENGLISH OVERVIEW (100-LEVEL DUAL-ARCHITECTURE MSBUILD GUIDE):
+  Automatically builds BOTH native AMD64 (`win-x64`) and native AArch64 (`win-arm64`)
+  PE32+ executables whenever `StoreTrainer.csproj` is built in Visual Studio 2026
+  (`Debug` or `Release`, regardless of whether `x64` or `ARM64` is selected).
+================================================================================
+-->
+<Project>
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(OutputType)' == 'WinExe' and '$(IsInnerPublishBuild)' != 'true'">
+    <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' != 'ARM64'">win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <Target Name="BuildCompanionDotNetArchitecture"
+          AfterTargets="Build"
+          Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(OutputType)' == 'WinExe' and '$(IsCompanionArchBuild)' != 'true' and '$(IsInnerPublishBuild)' != 'true'">
+    <PropertyGroup>
+      <CompanionPlatform Condition="'$(Platform)' == 'ARM64'">x64</CompanionPlatform>
+      <CompanionPlatform Condition="'$(Platform)' != 'ARM64'">ARM64</CompanionPlatform>
+    </PropertyGroup>
+
+    <Message Importance="High" Text="⚙️ [Dual-Arch Build] Compiling companion $(CompanionPlatform) binary for $(MSBuildProjectName)..." />
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);Platform=$(CompanionPlatform);BuildingSolutionFile=false;CurrentSolutionConfigurationContents=;IsCompanionArchBuild=true" />
+  </Target>
+</Project>

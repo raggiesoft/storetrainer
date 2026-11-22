@@ -115,4 +115,23 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL READER):
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+
+  <!--
+    Automatic Dual-Architecture MSVC Build Hook (`x64` + `ARM64`):
+    Ensures every Visual Studio build compiles BOTH `bin\x64\$(Configuration)\RaggieSoftUpdate.exe`
+    and `bin\ARM64\$(Configuration)\RaggieSoftUpdate.exe` automatically!
+  -->
+  <Target Name="BuildCompanionVcArchitecture"
+          AfterTargets="Build"
+          Condition="'$(IsCompanionArchBuild)' != 'true'">
+    <PropertyGroup>
+      <CompanionVcPlatform Condition="'$(Platform)' == 'ARM64'">x64</CompanionVcPlatform>
+      <CompanionVcPlatform Condition="'$(Platform)' != 'ARM64'">ARM64</CompanionVcPlatform>
+    </PropertyGroup>
+    <Message Importance="High" Text="⚙️ [Dual-Arch C++20] Compiling companion $(CompanionVcPlatform) RaggieSoftUpdate.exe..." />
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="Build"
+             Properties="Configuration=$(Configuration);Platform=$(CompanionVcPlatform);IsCompanionArchBuild=true"
+             ContinueOnError="WarnAndContinue" />
+  </Target>
 </Project>

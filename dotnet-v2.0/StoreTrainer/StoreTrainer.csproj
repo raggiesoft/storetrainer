@@ -90,7 +90,7 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
     Notice '$(IsInnerPublishBuild)' != 'true' prevents infinite recursion when this
     target calls 'dotnet publish' on itself!
   -->
-  <Target Name="BuildInnoSetupInstaller" AfterTargets="Build;Publish" Condition="'$(Configuration)' == 'Release' and '$(OS)' == 'Windows_NT' and '$(IsInnerPublishBuild)' != 'true'">
+  <Target Name="BuildInnoSetupInstaller" AfterTargets="Build;Publish" Condition="'$(Configuration)' == 'Release' and '$(OS)' == 'Windows_NT' and '$(IsInnerPublishBuild)' != 'true' and '$(IsCompanionArchBuild)' != 'true'">
     <PropertyGroup>
       <PublishDirX64>$(ProjectDir)bin\Release\net10.0-windows\win-x64\publish</PublishDirX64>
       <PublishDirArm64>$(ProjectDir)bin\Release\net10.0-windows\win-arm64\publish</PublishDirArm64>
