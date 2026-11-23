@@ -260,8 +260,8 @@ public sealed class RaggieSoftSuiteManager
                 LatestVersion = "1.0.0",
                 ExeName = "BookReader.exe",
                 DefaultSubFolder = @"RaggieSoft\Book Reader",
-                InstallerFileName = "RaggieSoft-BookReader-Setup.exe",
-                InstallerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/RaggieSoft-BookReader-Setup.exe",
+                InstallerFileName = "raggiesoft-book-reader-setup.exe",
+                InstallerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/book-reader/raggiesoft-book-reader-setup.exe",
                 WebUrl = "https://books.raggiesoft.com",
                 IconPackUri = "pack://application:,,,/Assets/BookReader.png"
             },
@@ -279,8 +279,8 @@ public sealed class RaggieSoftSuiteManager
                 LatestVersion = "1.0.0",
                 ExeName = "ListeningRoom.exe",
                 DefaultSubFolder = @"RaggieSoft\Listening Room",
-                InstallerFileName = "RaggieSoft-ListeningRoom-Setup.exe",
-                InstallerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/RaggieSoft-ListeningRoom-Setup.exe",
+                InstallerFileName = "raggiesoft-listening-room-setup.exe",
+                InstallerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/listening-room/raggiesoft-listening-room-setup.exe",
                 WebUrl = "https://music.raggiesoft.com",
                 IconPackUri = "pack://application:,,,/Assets/ListeningRoom.png"
             },
@@ -298,8 +298,8 @@ public sealed class RaggieSoftSuiteManager
                 LatestVersion = "1.0.0",
                 ExeName = "Backstage.exe",
                 DefaultSubFolder = @"RaggieSoft\Backstage",
-                InstallerFileName = "RaggieSoft-Backstage-Setup.exe",
-                InstallerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/RaggieSoft-Backstage-Setup.exe",
+                InstallerFileName = "raggiesoft-backstage-setup.exe",
+                InstallerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/backstage/raggiesoft-backstage-setup.exe",
                 WebUrl = "https://backstage.raggiesoft.com",
                 IconPackUri = "pack://application:,,,/Assets/Backstage.png"
             },
@@ -316,8 +316,8 @@ public sealed class RaggieSoftSuiteManager
                 LatestVersion = "2.0.0",
                 ExeName = "StoreTrainer.exe",
                 DefaultSubFolder = @"RaggieSoft\StoreTrainer",
-                InstallerFileName = "RaggieSoft-StoreTrainer-Setup.exe",
-                InstallerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/RaggieSoft-StoreTrainer-Setup.exe",
+                InstallerFileName = "raggiesoft-storetrainer-setup.exe",
+                InstallerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/storetrainer/raggiesoft-storetrainer-setup.exe",
                 WebUrl = "https://storetrainer.raggiesoft.com",
                 IconPackUri = "pack://application:,,,/Assets/StoreTrainer.png"
             }

@@ -33,9 +33,14 @@ int main() {
     assert(a2.mode == UiMode::SilentProgress);
     assert(a2.focusAppId == "book-reader");
 
-    // 3. Test zero-dependency 'apps-manifest.json' parsing & merging
+    // 3. Test zero-dependency 'apps-manifest.json' parsing, all 6 suite apps, & lowercase kebab-case URLs
     auto catalog = GetBuiltInSuiteCatalog();
-    assert(catalog.size() == 5);
+    assert(catalog.size() == 6);
+    for (const auto& entry : catalog) {
+        assert(!entry.installerFileName.empty());
+        assert(ToLowerAscii(entry.installerFileName) == entry.installerFileName);
+        assert(ToLowerAscii(entry.installerDownloadUrl) == entry.installerDownloadUrl);
+    }
 
     const char* sampleManifest = R"JSON([
       {

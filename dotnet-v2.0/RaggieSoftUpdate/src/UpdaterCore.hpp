@@ -337,7 +337,7 @@ struct JsonCursor {
 
 } // namespace detail
 
-// Built-in offline fallback catalog (covers all 5 RaggieSoft desktop apps including Launcher!).
+// Built-in offline fallback catalog (covers all 6 RaggieSoft desktop apps in 100% lowercase kebab-case!).
 inline std::vector<SuiteAppEntry> GetBuiltInSuiteCatalog() {
     return {
         SuiteAppEntry{
@@ -349,9 +349,9 @@ inline std::vector<SuiteAppEntry> GetBuiltInSuiteCatalog() {
             .description = "Central application hub for discovering, installing, and managing all RaggieSoft desktop apps.",
             .latestVersion = "1.0.0",
             .exeName = "RaggieSoftLauncher.exe",
-            .installerFileName = "RaggieSoft-Launcher-Setup.exe",
-            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/RaggieSoft-Launcher-Setup.exe",
-            .webUrl = "https://raggiesoft.com"
+            .installerFileName = "raggiesoft-launcher-setup.exe",
+            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/launcher/raggiesoft-launcher-setup.exe",
+            .webUrl = "https://launcher.raggiesoft.com"
         },
         SuiteAppEntry{
             .id = "book-reader",
@@ -362,8 +362,8 @@ inline std::vector<SuiteAppEntry> GetBuiltInSuiteCatalog() {
             .description = "Read all Ocean View Archives and Story Crossroads novels with scene illustrations and offline downloads.",
             .latestVersion = "1.0.0",
             .exeName = "BookReader.exe",
-            .installerFileName = "RaggieSoft-BookReader-Setup.exe",
-            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/RaggieSoft-BookReader-Setup.exe",
+            .installerFileName = "raggiesoft-book-reader-setup.exe",
+            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/book-reader/raggiesoft-book-reader-setup.exe",
             .webUrl = "https://books.raggiesoft.com"
         },
         SuiteAppEntry{
@@ -375,8 +375,8 @@ inline std::vector<SuiteAppEntry> GetBuiltInSuiteCatalog() {
             .description = "Stream and download the Engine Room Records catalog with synchronized lyrics and liner notes.",
             .latestVersion = "1.0.0",
             .exeName = "ListeningRoom.exe",
-            .installerFileName = "RaggieSoft-ListeningRoom-Setup.exe",
-            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/RaggieSoft-ListeningRoom-Setup.exe",
+            .installerFileName = "raggiesoft-listening-room-setup.exe",
+            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/listening-room/raggiesoft-listening-room-setup.exe",
             .webUrl = "https://music.raggiesoft.com"
         },
         SuiteAppEntry{
@@ -388,8 +388,8 @@ inline std::vector<SuiteAppEntry> GetBuiltInSuiteCatalog() {
             .description = "Explore behind-the-scenes dossiers, character correspondence, and campus guides.",
             .latestVersion = "1.0.0",
             .exeName = "Backstage.exe",
-            .installerFileName = "RaggieSoft-Backstage-Setup.exe",
-            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/RaggieSoft-Backstage-Setup.exe",
+            .installerFileName = "raggiesoft-backstage-setup.exe",
+            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/backstage/raggiesoft-backstage-setup.exe",
             .webUrl = "https://backstage.raggiesoft.com"
         },
         SuiteAppEntry{
@@ -401,12 +401,25 @@ inline std::vector<SuiteAppEntry> GetBuiltInSuiteCatalog() {
             .description = "Organize and launch PC games with companion trainers, pre-launch save backups, .NFO cheat cards, and .stfx profiles.",
             .latestVersion = "2.0.0",
             .exeName = "StoreTrainer.exe",
-            .installerFileName = "RaggieSoft-StoreTrainer-Setup.exe",
-            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/RaggieSoft-StoreTrainer-Setup.exe",
+            .installerFileName = "raggiesoft-storetrainer-setup.exe",
+            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/storetrainer/raggiesoft-storetrainer-setup.exe",
             .webUrl = "https://storetrainer.raggiesoft.com",
             .latestClassicVersion = "1.1.0",
             .classicPatchFileName = "tspatch110.exe",
             .classicPatchDownloadUrl = "https://assets.raggiesoft.com/storetrainer/tspatch110.exe"
+        },
+        SuiteAppEntry{
+            .id = "accessibility-studio",
+            .innoAppId = "{50F8BAE3-295E-4D24-BEC0-89D6ABBCDA9D}",
+            .title = "RaggieSoft Accessibility Studio",
+            .imprint = "RAGGIESOFT ENTERPRISE",
+            .category = "Developer Tools",
+            .description = "Enterprise WCAG 2.2 AA and Revised Section 508 source-code web IDE and SARIF 2.1.0 CLI scanner.",
+            .latestVersion = "1.0.0",
+            .exeName = "AccessibilityStudio.exe",
+            .installerFileName = "raggiesoft-accessibility-studio-setup.exe",
+            .installerDownloadUrl = "https://assets.raggiesoft.com/desktop-apps/windows/apps/accessibility-studio/raggiesoft-accessibility-studio-setup.exe",
+            .webUrl = "https://a11y.raggiesoft.com"
         }
     };
 }

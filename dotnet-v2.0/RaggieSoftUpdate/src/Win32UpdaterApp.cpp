@@ -64,21 +64,25 @@
 #include <vector>
 
 #include "UpdaterCore.hpp"
+#include "../../SharedCpp/Win32ThemeAndA11y.hpp"
 
 // Tell the MSVC linker to link only built-in Windows OS system import libraries
 // and embed a Common Controls v6 visual-styles manifest directly into the .exe!
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "user32.lib")
+#pragma comment(lib, "uxtheme.lib")
 #pragma comment(lib, "winhttp.lib")
 
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 namespace fs = std::filesystem;
 using namespace raggiesoft::updater;
+using namespace raggiesoft::win32a11y;
 
 namespace {
 
@@ -442,11 +446,11 @@ bool HttpDownloadToFile(std::string_view urlUtf8, const fs::path& destFile, Prog
     return !ec;
 }
 
-// Executes a downloaded Inno Setup ('/VERYSILENT ...') or NSIS ('/S') installer and waits for exit code 0.
+// Executes a downloaded InstallAware ('/s /rsupdate') or NSIS ('/S') installer silently.
 bool ExecuteInstallerSilently(const fs::path& installerPath, bool isNsisPatch) {
     const std::wstring params = isNsisPatch
         ? L"/S"
-        : L"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS";
+        : L"/s /rsupdate";
 
     SHELLEXECUTEINFOW sei{};
     sei.cbSize = sizeof(sei);
@@ -464,7 +468,8 @@ bool ExecuteInstallerSilently(const fs::path& installerPath, bool isNsisPatch) {
     DWORD exitCode = 1;
     ::GetExitCodeProcess(sei.hProcess, &exitCode);
     ::CloseHandle(sei.hProcess);
-    return exitCode == 0;
+    // 0 == OK, 3010 / 9001 == succeeded with pending reboot
+    return (exitCode == 0 || exitCode == 3010 || exitCode == 9001);
 }
 
 // Writes a compact status file in '%LOCALAPPDATA%\RaggieSoft\Cache\update-status.json'
@@ -519,6 +524,7 @@ constexpr int IDC_CANCEL_BTN   = 1007;
 struct WizardWindowState {
     UpdaterArgs args;
     std::vector<SuiteAppEntry> catalog;
+    HINSTANCE hInst = nullptr;
     HWND hwnd = nullptr;
     HWND headerLabel = nullptr;
     HWND subLabel = nullptr;
@@ -529,14 +535,81 @@ struct WizardWindowState {
     HWND cancelBtn = nullptr;
     HFONT titleFont = nullptr;
     HFONT bodyFont = nullptr;
+    ThemePalette theme;
     int step = 0; // 0 = Checking, 1 = Selection, 2 = Installing, 3 = Complete
     int finalExitCode = ExitCodes::UpToDateOrSuccess;
     std::atomic<bool> cancelRequested{false};
 };
 
-int ScaleDpi(HWND hwnd, int px) {
-    const UINT dpi = ::GetDpiForWindow(hwnd);
-    return ::MulDiv(px, static_cast<int>(dpi > 0 ? dpi : 96), 96);
+void RebuildUpdaterFontsAndLayout(WizardWindowState* st) {
+    if (!st || !st->hwnd) return;
+    const HWND hwnd = st->hwnd;
+    const UINT dpi  = ::GetDpiForWindow(hwnd);
+    const int ts    = st->theme.textScalePercent;
+
+    HFONT newTitle = ::CreateFontW(-ScaleFontPx(18, dpi, ts), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    HFONT newBody  = ::CreateFontW(-ScaleFontPx(13, dpi, ts), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+
+    if (st->headerLabel) ::SendMessageW(st->headerLabel, WM_SETFONT, reinterpret_cast<WPARAM>(newTitle), TRUE);
+    for (HWND h : {st->subLabel, st->statusLabel, st->listView, st->primaryBtn, st->cancelBtn}) {
+        if (h) ::SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(newBody), TRUE);
+    }
+    if (st->titleFont) ::DeleteObject(st->titleFont);
+    if (st->bodyFont)  ::DeleteObject(st->bodyFont);
+    st->titleFont = newTitle;
+    st->bodyFont  = newBody;
+
+    RECT rc{};
+    ::GetClientRect(hwnd, &rc);
+    const int w   = rc.right - rc.left;
+    const int h   = rc.bottom - rc.top;
+    const int pad = ScaleLayoutPx(18, dpi, 100);
+    const bool silentOnly = (st->args.mode == UiMode::SilentProgress);
+
+    const int hdrH = ScaleLayoutPx(28, dpi, ts);
+    const int subH = ScaleLayoutPx(40, dpi, ts);
+    ::MoveWindow(st->headerLabel, pad, pad, w - pad * 2, hdrH, TRUE);
+    ::MoveWindow(st->subLabel, pad, pad + hdrH + ScaleLayoutPx(4, dpi, 100), w - pad * 2, subH, TRUE);
+
+    if (silentOnly) {
+        const int barY = pad + hdrH + subH + ScaleLayoutPx(10, dpi, 100);
+        ::MoveWindow(st->progressBar, pad, barY, w - pad * 2, ScaleLayoutPx(24, dpi, 100), TRUE);
+        ::MoveWindow(st->statusLabel, pad, barY + ScaleLayoutPx(30, dpi, 100), w - pad * 2, ScaleLayoutPx(24, dpi, ts), TRUE);
+    } else {
+        const int topY = pad + hdrH + subH + ScaleLayoutPx(10, dpi, 100);
+        const int btnH = ScaleLayoutPx(34, dpi, ts);
+        const int btnY = h - pad - btnH;
+        const int stsY = btnY - ScaleLayoutPx(30, dpi, ts);
+        const int midH = std::max(ScaleLayoutPx(120, dpi, 100), stsY - topY - ScaleLayoutPx(8, dpi, 100));
+
+        ::MoveWindow(st->listView, pad, topY, w - pad * 2, midH, TRUE);
+        ::MoveWindow(st->progressBar, pad, topY + midH / 3, w - pad * 2, ScaleLayoutPx(24, dpi, 100), TRUE);
+        ::MoveWindow(st->statusLabel, pad, stsY, w - pad * 2, ScaleLayoutPx(24, dpi, ts), TRUE);
+
+        const int cancW = ScaleLayoutPx(100, dpi, ts);
+        const int primW = ScaleLayoutPx(200, dpi, ts);
+        ::MoveWindow(st->primaryBtn, w - pad - cancW - ScaleLayoutPx(10, dpi, 100) - primW, btnY, primW, btnH, TRUE);
+        ::MoveWindow(st->cancelBtn,  w - pad - cancW, btnY, cancW, btnH, TRUE);
+
+        if (st->listView) {
+            ListView_SetColumnWidth(st->listView, 0, ScaleLayoutPx(250, dpi, ts));
+            ListView_SetColumnWidth(st->listView, 1, std::max(ScaleLayoutPx(260, dpi, ts), w - pad * 2 - ScaleLayoutPx(275, dpi, ts)));
+        }
+    }
+}
+
+void RefreshUpdaterTheme(WizardWindowState* st) {
+    if (!st || !st->hwnd) return;
+    st->theme.RefreshFromSystem();
+    RebuildUpdaterFontsAndLayout(st);
+    ApplyWindowAndControlThemes(
+        st->hwnd,
+        st->theme,
+        {st->progressBar, st->primaryBtn, st->cancelBtn},
+        {},
+        st->listView);
 }
 
 void PopulateWizardListView(WizardWindowState* st) {
@@ -627,71 +700,64 @@ LRESULT CALLBACK UpdaterWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         case WM_CREATE: {
             auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
             st = reinterpret_cast<WizardWindowState*>(cs->lpCreateParams);
-            st->hwnd = hwnd;
+            st->hwnd  = hwnd;
+            st->hInst = cs->hInstance;
             ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(st));
 
-            st->titleFont = ::CreateFontW(-ScaleDpi(hwnd, 18), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-            st->bodyFont = ::CreateFontW(-ScaleDpi(hwnd, 13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+            const UINT dpi = ::GetDpiForWindow(hwnd);
+            ApplyDpiWindowIcons(hwnd, cs->hInstance, dpi);
 
             const bool silentOnly = (st->args.mode == UiMode::SilentProgress);
-            const int pad = ScaleDpi(hwnd, 18);
-            const int w = ScaleDpi(hwnd, silentOnly ? 460 : 600);
 
             st->headerLabel = ::CreateWindowExW(0, L"STATIC", L"Checking for RaggieSoft Software Updates...",
-                WS_CHILD | WS_VISIBLE, pad, pad, w - pad * 2, ScaleDpi(hwnd, 26), hwnd,
+                WS_CHILD | WS_VISIBLE | SS_NOPREFIX, 0, 0, 100, 26, hwnd,
                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HEADER_LABEL)), cs->hInstance, nullptr);
-            ::SendMessageW(st->headerLabel, WM_SETFONT, reinterpret_cast<WPARAM>(st->titleFont), TRUE);
 
             st->subLabel = ::CreateWindowExW(0, L"STATIC", L"Contacting RaggieSoft update catalog...",
-                WS_CHILD | WS_VISIBLE, pad, pad + ScaleDpi(hwnd, 30), w - pad * 2, ScaleDpi(hwnd, 36), hwnd,
+                WS_CHILD | WS_VISIBLE | SS_NOPREFIX, 0, 0, 100, 36, hwnd,
                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_SUB_LABEL)), cs->hInstance, nullptr);
-            ::SendMessageW(st->subLabel, WM_SETFONT, reinterpret_cast<WPARAM>(st->bodyFont), TRUE);
 
             st->progressBar = ::CreateWindowExW(0, PROGRESS_CLASSW, nullptr,
-                WS_CHILD | WS_VISIBLE | PBS_SMOOTH,
-                pad, pad + ScaleDpi(hwnd, silentOnly ? 72 : 140), w - pad * 2, ScaleDpi(hwnd, 24), hwnd,
+                WS_CHILD | WS_VISIBLE | PBS_SMOOTH, 0, 0, 100, 24, hwnd,
                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PROGRESS_BAR)), cs->hInstance, nullptr);
             ::SendMessageW(st->progressBar, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
 
             st->statusLabel = ::CreateWindowExW(0, L"STATIC", L"Checking installed applications...",
-                WS_CHILD | WS_VISIBLE, pad, pad + ScaleDpi(hwnd, silentOnly ? 104 : 300), w - pad * 2, ScaleDpi(hwnd, 22), hwnd,
+                WS_CHILD | WS_VISIBLE | SS_NOPREFIX, 0, 0, 100, 22, hwnd,
                 reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_STATUS_LABEL)), cs->hInstance, nullptr);
-            ::SendMessageW(st->statusLabel, WM_SETFONT, reinterpret_cast<WPARAM>(st->bodyFont), TRUE);
 
             if (!silentOnly) {
-                st->listView = ::CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
-                    WS_CHILD | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
-                    pad, pad + ScaleDpi(hwnd, 72), w - pad * 2, ScaleDpi(hwnd, 215), hwnd,
+                st->listView = ::CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"Installed Applications",
+                    WS_CHILD | WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
+                    0, 0, 100, 200, hwnd,
                     reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_APP_LISTVIEW)), cs->hInstance, nullptr);
                 ListView_SetExtendedListViewStyle(st->listView, LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
                 LVCOLUMNW col0{};
                 col0.mask = LVCF_TEXT | LVCF_WIDTH;
-                col0.cx = ScaleDpi(hwnd, 260);
+                col0.cx = ScaleLayoutPx(250, dpi);
                 col0.pszText = const_cast<LPWSTR>(L"Application");
                 ListView_InsertColumn(st->listView, 0, &col0);
 
                 LVCOLUMNW col1{};
                 col1.mask = LVCF_TEXT | LVCF_WIDTH;
-                col1.cx = ScaleDpi(hwnd, 285);
+                col1.cx = ScaleLayoutPx(285, dpi);
                 col1.pszText = const_cast<LPWSTR>(L"Status & Version");
                 ListView_InsertColumn(st->listView, 1, &col1);
 
-                st->primaryBtn = ::CreateWindowExW(0, L"BUTTON", L"Install Selected Updates",
+                st->primaryBtn = ::CreateWindowExW(0, L"BUTTON", L"&Install Selected Updates",
                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-                    w - pad - ScaleDpi(hwnd, 290), pad + ScaleDpi(hwnd, 334), ScaleDpi(hwnd, 185), ScaleDpi(hwnd, 32), hwnd,
+                    0, 0, 185, 32, hwnd,
                     reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PRIMARY_BTN)), cs->hInstance, nullptr);
-                ::SendMessageW(st->primaryBtn, WM_SETFONT, reinterpret_cast<WPARAM>(st->bodyFont), TRUE);
                 ::EnableWindow(st->primaryBtn, FALSE);
 
-                st->cancelBtn = ::CreateWindowExW(0, L"BUTTON", L"Close",
+                st->cancelBtn = ::CreateWindowExW(0, L"BUTTON", L"&Close",
                     WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                    w - pad - ScaleDpi(hwnd, 95), pad + ScaleDpi(hwnd, 334), ScaleDpi(hwnd, 95), ScaleDpi(hwnd, 32), hwnd,
+                    0, 0, 95, 32, hwnd,
                     reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_CANCEL_BTN)), cs->hInstance, nullptr);
-                ::SendMessageW(st->cancelBtn, WM_SETFONT, reinterpret_cast<WPARAM>(st->bodyFont), TRUE);
             }
+
+            RefreshUpdaterTheme(st);
 
             // Spawn background manifest & Registry check so the UI opens instantaneously!
             std::thread([st]() {
@@ -705,6 +771,57 @@ LRESULT CALLBACK UpdaterWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             }).detach();
             return 0;
         }
+
+        case WM_ERASEBKGND: {
+            if (st && st->theme.hbrWindowBg) {
+                HDC hdc = reinterpret_cast<HDC>(wParam);
+                RECT rc{};
+                ::GetClientRect(hwnd, &rc);
+                ::FillRect(hdc, &rc, st->theme.hbrWindowBg);
+                return 1;
+            }
+            break;
+        }
+
+        case WM_CTLCOLORSTATIC:
+        case WM_CTLCOLORBTN: {
+            if (st && st->theme.hbrWindowBg) {
+                HDC hdc  = reinterpret_cast<HDC>(wParam);
+                HWND ctl = reinterpret_cast<HWND>(lParam);
+                ::SetTextColor(hdc, (ctl == st->subLabel || ctl == st->statusLabel)
+                                    ? st->theme.textMuted
+                                    : st->theme.textPrimary);
+                ::SetBkColor(hdc, st->theme.windowBg);
+                return reinterpret_cast<LRESULT>(st->theme.hbrWindowBg);
+            }
+            break;
+        }
+
+        case WM_SETTINGCHANGE:
+        case WM_SYSCOLORCHANGE:
+        case WM_THEMECHANGED: {
+            RefreshUpdaterTheme(st);
+            return 0;
+        }
+
+        case WM_DPICHANGED: {
+            const UINT newDpi = HIWORD(wParam);
+            if (st) ApplyDpiWindowIcons(hwnd, st->hInst, newDpi);
+            const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+            if (suggested) {
+                ::SetWindowPos(hwnd, nullptr,
+                               suggested->left, suggested->top,
+                               suggested->right - suggested->left,
+                               suggested->bottom - suggested->top,
+                               SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+            RebuildUpdaterFontsAndLayout(st);
+            return 0;
+        }
+
+        case WM_SIZE:
+            RebuildUpdaterFontsAndLayout(st);
+            return 0;
 
         case WM_UPDATER_STATUS: {
             auto* textPtr = reinterpret_cast<std::wstring*>(lParam);
@@ -784,7 +901,7 @@ LRESULT CALLBACK UpdaterWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
         case WM_COMMAND: {
             const int id = LOWORD(wParam);
-            if (id == IDC_CANCEL_BTN) {
+            if (id == IDC_CANCEL_BTN || id == IDCANCEL) {
                 st->cancelRequested.store(true);
                 ::DestroyWindow(hwnd);
                 return 0;
@@ -828,6 +945,7 @@ LRESULT CALLBACK UpdaterWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             if (st) {
                 if (st->titleFont) ::DeleteObject(st->titleFont);
                 if (st->bodyFont) ::DeleteObject(st->bodyFont);
+                st->theme.ReleaseBrushes();
             }
             ::PostQuitMessage(st ? st->finalExitCode : 0);
             return 0;
@@ -912,6 +1030,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     }
 
     // Path 2: Interactive Wizard or '/SILENT' Progress Bar window
+    EnableProcessDarkModeSupport();
+
     INITCOMMONCONTROLSEX icc{sizeof(icc), ICC_WIN95_CLASSES | ICC_LISTVIEW_CLASSES | ICC_PROGRESS_CLASS};
     ::InitCommonControlsEx(&icc);
 
@@ -924,17 +1044,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     wc.lpfnWndProc = UpdaterWndProc;
     wc.hInstance = hInstance;
     wc.hCursor = ::LoadCursorW(nullptr, IDC_ARROW);
-    wc.hIcon = ::LoadIconW(nullptr, IDI_APPLICATION);
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.hIcon = ::LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_RAGGIESOFT_APP_ICON));
+    wc.hIconSm = static_cast<HICON>(::LoadImageW(
+        hInstance, MAKEINTRESOURCEW(IDI_RAGGIESOFT_APP_ICON), IMAGE_ICON, 16, 16, LR_SHARED));
+    wc.hbrBackground = nullptr; // Painted by `WM_ERASEBKGND` for Dark, Light, & High Contrast!
     wc.lpszClassName = L"RaggieSoftUpdateWizardClass";
     ::RegisterClassExW(&wc);
 
+    const UINT sysDpi = ::GetDpiForSystem();
     const bool silentOnly = (args.mode == UiMode::SilentProgress);
-    const int winW = silentOnly ? 485 : 625;
-    const int winH = silentOnly ? 185 : 430;
+    const int winW = ScaleLayoutPx(silentOnly ? 485 : 640, sysDpi);
+    const int winH = ScaleLayoutPx(silentOnly ? 195 : 450, sysDpi);
     const DWORD style = silentOnly
-        ? (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU)
-        : (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX);
+        ? (WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN)
+        : (WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN);
 
     HWND hwnd = ::CreateWindowExW(
         0,
