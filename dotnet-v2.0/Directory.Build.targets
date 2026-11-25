@@ -11,7 +11,7 @@ PLAIN-ENGLISH OVERVIEW (100-LEVEL DUAL-ARCHITECTURE MSBUILD GUIDE):
 ================================================================================
 -->
 <Project>
-  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(OutputType)' == 'WinExe' and '$(IsInnerPublishBuild)' != 'true'">
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' and !$(MSBuildProjectName.EndsWith('_wpftmp')) and '$(OutputType)' == 'WinExe' and '$(IsInnerPublishBuild)' != 'true'">
     <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
     <RuntimeIdentifier Condition="'$(Platform)' != 'ARM64'">win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
@@ -19,7 +19,7 @@ PLAIN-ENGLISH OVERVIEW (100-LEVEL DUAL-ARCHITECTURE MSBUILD GUIDE):
 
   <Target Name="BuildCompanionDotNetArchitecture"
           AfterTargets="Build"
-          Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(OutputType)' == 'WinExe' and '$(IsCompanionArchBuild)' != 'true' and '$(IsInnerPublishBuild)' != 'true'">
+          Condition="'$(MSBuildProjectExtension)' == '.csproj' and !$(MSBuildProjectName.EndsWith('_wpftmp')) and '$(OutputType)' == 'WinExe' and '$(IsCompanionArchBuild)' != 'true' and '$(IsInnerPublishBuild)' != 'true'">
     <PropertyGroup>
       <CompanionPlatform Condition="'$(Platform)' == 'ARM64'">x64</CompanionPlatform>
       <CompanionPlatform Condition="'$(Platform)' != 'ARM64'">ARM64</CompanionPlatform>
