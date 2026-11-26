@@ -29,7 +29,7 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
   <!--
     <PropertyGroup>: Core compiler, runtime, and executable metadata settings.
     - OutputType="WinExe": Produces a graphical Windows desktop executable.
-    - TargetFramework="net10.0-windows": Targets .NET 10 with Windows WPF APIs enabled.
+    - TargetFramework="net11.0-windows": Targets .NET 10 with Windows WPF APIs enabled.
     - Platforms="x64;ARM64" + RuntimeIdentifiers="win-x64;win-arm64": Supports both
       Intel/AMD 64-bit PCs and Snapdragon/Apple-Silicon-VM ARM64 Windows PCs natively.
     - EnableWindowsTargeting="true": Allows 'dotnet build' to cross-compile and
@@ -39,7 +39,7 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net11.0-windows</TargetFramework>
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
@@ -92,8 +92,8 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
   -->
   <Target Name="BuildInnoSetupInstaller" AfterTargets="Build;Publish" Condition="'$(Configuration)' == 'Release' and '$(OS)' == 'Windows_NT' and '$(IsInnerPublishBuild)' != 'true' and '$(IsCompanionArchBuild)' != 'true'">
     <PropertyGroup>
-      <PublishDirX64>$(ProjectDir)bin\Release\net10.0-windows\win-x64\publish</PublishDirX64>
-      <PublishDirArm64>$(ProjectDir)bin\Release\net10.0-windows\win-arm64\publish</PublishDirArm64>
+      <PublishDirX64>$(ProjectDir)bin\Release\net11.0-windows\win-x64\publish</PublishDirX64>
+      <PublishDirArm64>$(ProjectDir)bin\Release\net11.0-windows\win-arm64\publish</PublishDirArm64>
       <InnoSetupRegistryDir>$([MSBuild]::GetRegistryValueFromView('HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 7_is1', 'InstallLocation', null, RegistryView.Registry64))</InnoSetupRegistryDir>
       <InnoSetupRegistryDir Condition="'$(InnoSetupRegistryDir)' == ''">$([MSBuild]::GetRegistryValueFromView('HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 7_is1', 'InstallLocation', null, RegistryView.Registry64))</InnoSetupRegistryDir>
       <InnoSetupCompiler Condition="'$(InnoSetupRegistryDir)' != '' and Exists('$([MSBuild]::EnsureTrailingSlash($(InnoSetupRegistryDir)))ISCC.exe')">$([MSBuild]::EnsureTrailingSlash($(InnoSetupRegistryDir)))ISCC.exe</InnoSetupCompiler>

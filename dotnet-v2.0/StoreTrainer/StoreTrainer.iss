@@ -24,10 +24,10 @@
 ; ================================================================================
 
 #ifndef BuildDirX64
-  #define BuildDirX64 "bin\Release\net10.0-windows\win-x64\publish"
+  #define BuildDirX64 "bin\Release\net11.0-windows\win-x64\publish"
 #endif
 #ifndef BuildDirArm64
-  #define BuildDirArm64 "bin\Release\net10.0-windows\win-arm64\publish"
+  #define BuildDirArm64 "bin\Release\net11.0-windows\win-arm64\publish"
 #endif
 
 #define MyAppName "RaggieSoft StoreTrainer"
