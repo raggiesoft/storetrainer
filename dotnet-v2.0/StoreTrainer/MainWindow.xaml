@@ -155,7 +155,7 @@ PLAIN-ENGLISH OVERVIEW (FOR A 100-LEVEL BEGINNER):
                            DockPanel.Dock="Left"
                            VerticalAlignment="Center"
                            FontWeight="SemiBold"
-                           Text="✨ Found classic StoreFiles (.stf) in your My StoreFiles folder — upgrade them to StoreTrainer 2.0 (.stfx) while keeping your originals untouched!" />
+                           Text="📦 Found classic StoreFiles (.stf) in your My StoreFiles folder — upgrade them to StoreTrainer 2.0 (.stfx) while keeping your originals untouched!" />
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                     <Button Content="🪄 Launch StoreFile Upgrade Wizard..."
                             FontWeight="Bold"

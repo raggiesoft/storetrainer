@@ -318,10 +318,10 @@ public static class RaggieSoftFlowDocumentBuilder
             });
         }
 
-        // 3. Dateline Metadata Bar (`📅 Date`, `✨ Stardate`, `🕒 Start–End Time (Timezone)`, `📍 Location`, `👁 POV`)
+        // 3. Dateline Metadata Bar (`📅 Date`, `🪐 Stardate`, `🕒 Start–End Time (Timezone)`, `📍 Location`, `👁 POV`)
         var metaItems = new List<string>();
         if (!string.IsNullOrWhiteSpace(parsed.Date)) metaItems.Add($"📅 {parsed.Date}");
-        if (!string.IsNullOrWhiteSpace(parsed.Stardate)) metaItems.Add($"✨ Stardate {parsed.Stardate}");
+        if (!string.IsNullOrWhiteSpace(parsed.Stardate)) metaItems.Add($"🪐 Stardate {parsed.Stardate}");
         if (!string.IsNullOrWhiteSpace(parsed.StartTime))
         {
             var timeSpanText = !string.IsNullOrWhiteSpace(parsed.EndTime)

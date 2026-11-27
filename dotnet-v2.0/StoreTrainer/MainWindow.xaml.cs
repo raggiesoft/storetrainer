@@ -129,7 +129,7 @@ public partial class MainWindow : Window
         if (unmigrated.Count > 0)
         {
             ClassicImportBannerText.Text =
-                $"✨ Found {unmigrated.Count} classic StoreFile profile(s) (.stf) in My StoreFiles — upgrade them to StoreTrainer 2.0 (.stfx) while keeping your originals untouched!";
+                $"📦 Found {unmigrated.Count} classic StoreFile profile(s) (.stf) in My StoreFiles — upgrade them to StoreTrainer 2.0 (.stfx) while keeping your originals untouched!";
             ClassicImportBannerBorder.Visibility = Visibility.Visible;
         }
         else
