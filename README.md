@@ -25,7 +25,7 @@ This repository preserves the **untouched pre-AI historical codebase (`2018–20
 - Built by hand in **Visual Basic 6.0** inside a **Windows 2000 Professional SP4** VirtualBox VM (`2018–2020`).
 - Includes [`archive/ARCHIVE-PROVENANCE.md`](./archive/ARCHIVE-PROVENANCE.md) documenting both the original VB6 modules (`DetectOSBits.bas` dynamic `GetProcAddress` probing for `IsWow64Process` so `TStore.exe` runs on Windows 95 without missing kernel exports) and the exact history of `TStore.NET/_UpgradeReport.htm` (generated automatically on `2022-05-15 19:16` when `TStore.vbp` was opened once in Visual Studio .NET 2003).
 
-### 2. StoreTrainer v1.1 — Classic VB6 + Word 97 $\leftrightarrow$ Word 2000 `.stf` Forward Compatibility (`vb6-v1.1/`)
+### 2. StoreTrainer v1.1 — Classic VB6 + Word 97 ↔ Word 2000 `.stf` Forward Compatibility (`vb6-v1.1/`)
 - **Full `.stf` Forward & Backward Compatibility (`STF.Version=1.0`)**: Like opening a Word 2000 `.doc` inside Word 97, StoreTrainer `v1.1` continues writing `STF.Version=1.0` inside `Documents\My StoreFiles\*.stf` so profiles saved in `v1.1` open cleanly in `v1.0` (which simply ignores `v1.1`'s optional `LaunchDelay` key).
 - **Completed Command-Line & Explorer Integration**: Implements `CheckCommandLine()` in `TStore.bas` supporting `/l "<file>.stf"` (silent launch & exit), `/e "<file>.stf"` (open in editor), `File -> Recent` MRU history, parent-folder working directory resolution, and `Help -> Check for Updates...` (which delegates to `RaggieSoftUpdate.exe` on Windows 10/11 and **automatically disables itself** on offline retro Windows 95–8.1 machines!).
 - **Windows 95 ANSI NSIS (`TSSetup.nsi` & `TSSetup-Patch.nsi`)**:
